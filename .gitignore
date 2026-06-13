@@ -1,0 +1,16 @@
+# generic
+.DS_Store
+.fleet
+.idea
+.vscode
+.zed
+.antigravitycli
+
+# environment files and secrets
+/.env
+/.secrets
+
+# generated artifacts
+/build
+/coverage.html
+/coverage.out
