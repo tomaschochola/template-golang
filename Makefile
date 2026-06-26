@@ -189,11 +189,11 @@ tidy_check:
 
 .PHONY: gofmt_check
 gofmt_check:
-	test -z "$$($(GOFMT) -e -s -l . | tee /dev/stderr)"
+	out=$$($(GOFMT) -e -s -l .); if [ -n "$$out" ]; then printf '%s\n' "$$out" >&2; exit 1; fi
 
 .PHONY: goimports_check
 goimports_check:
-	test -z "$$($(GO) tool goimports -e -local $(MODULE) -l . | tee /dev/stderr)"
+	out=$$($(GO) tool goimports -e -local $(MODULE) -l .); if [ -n "$$out" ]; then printf '%s\n' "$$out" >&2; exit 1; fi
 
 .PHONY: go_list_check
 go_list_check:
