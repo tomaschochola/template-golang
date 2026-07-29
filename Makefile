@@ -71,59 +71,15 @@ GO_TEST_FLAGS := -mod=readonly -v -race -count=2 -shuffle=on -vet=all -cpu=$(TES
 
 # Default goal
 
-.DEFAULT_GOAL := help
+.DEFAULT_GOAL := never
+
+.PHONY: never
+.SILENT: never
+never:
+	printf '%s\n' 'No default target. Run an explicit target' >&2
+	exit 1
 
 # Goals
-
-.PHONY: help
-.SILENT: help
-help:
-	printf '\033[1m%s\033[0m\n' "$${PWD##*/} targets"
-	printf '%s\n' '--------------------------------------------------------------------------------'
-	printf '\033[1m%-25s\033[0m  %s\n' 'help' 'Show this help.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'arch' 'Install Arch Linux development packages via one sudo pacman call.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'archlinux' 'Alias for arch.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'pacman' 'Alias for arch.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'all' 'Build release artifacts and print build metadata.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'fix' 'Run all automatic official Go fixers/formatters.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'check' 'Run lint, static analysis, tests, and audits.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'deep_check' 'Run all normal and extended verification targets.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'lint' 'Run formatting checks.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'static' 'Run module, build, modernizer, vet, and analyzer checks.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'test' 'Run the race-enabled Go test suite.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'coverage' 'Generate Go unit coverage reports.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'integration_coverage' 'Generate coverage from an instrumented command binary.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'benchmark' 'Run Go benchmarks with allocation reporting.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'fuzz' 'Run one bounded Go fuzz target.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'profile' 'Generate official Go CPU/memory/block/mutex profiles for one package.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'sanitize' 'Run sanitizer checks that are safe by default on this template.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'audit' 'Run module verification and govulncheck scans.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'clean' 'Remove generated artifacts.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'distclean' 'Alias for clean.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'go_fix' 'Apply official go fix modernizers.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'tidy_fix' 'Tidy Go modules.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'gofmt_fix' 'Format Go files with gofmt.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'goimports_fix' 'Format Go imports with goimports.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'tidy_check' 'Check Go module tidiness.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'gofmt_check' 'Check Go formatting with gofmt.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'goimports_check' 'Check Go imports with goimports.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'go_list_check' 'Check package loading including tests and dependencies.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'go_fix_check' 'Check pending official go fix modernizers.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'build_check' 'Compile all packages with hardened build flags.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'vet_check' 'Run go vet with all default analyzers.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'shadow_check' 'Run the Go shadow analyzer in strict mode.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'go_test' 'Run the Go test suite.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'go_coverage' 'Generate Go coverage reports.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'go_module_audit' 'Verify modules and scan module-level vulnerabilities.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'go_package_audit' 'Scan package-level vulnerabilities.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'go_source_audit' 'Scan source symbol reachability vulnerabilities.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'go_binary_audit' 'Scan built binary vulnerabilities.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'go_build_metadata' 'Print embedded Go build metadata for the command binary.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'asan_check' 'Run tests with the Go address sanitizer integration.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'msan_check' 'Run tests with memory sanitizer; requires Clang/LLVM support.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'fips_check' 'Run tests with GOFIPS140 enabled.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'build' 'Build the command binary.'
-	printf '\033[1m%-25s\033[0m  %s\n' 'build_fips' 'Build the command binary with GOFIPS140 enabled.'
 
 .PHONY: arch archlinux pacman
 arch archlinux pacman:
@@ -166,6 +122,9 @@ clean:
 
 .PHONY: distclean
 distclean: clean
+
+.PHONY: nuke
+nuke: distclean
 
 .PHONY: go_fix
 go_fix:
