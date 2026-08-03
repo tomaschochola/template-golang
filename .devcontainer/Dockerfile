@@ -1,0 +1,30 @@
+# syntax=docker/dockerfile:1@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
+
+FROM docker.io/library/node:24-trixie@sha256:dfa43abae25030f5456007944f725379d1f5be4bb723bd501ac39ac72ffa5474 AS versionednode
+FROM docker.io/library/golang:1.26.5-trixie@sha256:4ee9ffa999b4583ce281939cdff828763083610292f252279a0cee77473bd9a7
+
+COPY --from=versionednode /usr/local/bin/node /usr/local/bin/node
+COPY --from=versionednode /usr/local/include/node /usr/local/include/node
+COPY --from=versionednode /usr/local/lib/node_modules /usr/local/lib/node_modules
+COPY --from=versionednode /usr/local/LICENSE /usr/local/share/doc/node/LICENSE
+
+RUN apt-get update \
+    && DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes --no-install-recommends \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends clang git libclang-rt-dev make openssh-client sudo \
+    && groupadd --gid 1000 devcontainer \
+    && useradd --uid 1000 --gid devcontainer --shell /bin/bash --create-home devcontainer \
+    && install --directory --owner devcontainer --group devcontainer \
+        /home/devcontainer/.local \
+        /home/devcontainer/.local/bin \
+        /home/devcontainer/.local/lib \
+        /home/devcontainer/.local/lib/node_modules \
+    && printf '%s\n' 'devcontainer ALL=(root) NOPASSWD:ALL' > /etc/sudoers.d/devcontainer \
+    && chmod 0440 /etc/sudoers.d/devcontainer \
+    && ln --symbolic ../lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln --symbolic ../lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV NPM_CONFIG_PREFIX=/home/devcontainer/.local
+ENV PATH=/home/devcontainer/.local/bin:${PATH}
+
+USER devcontainer

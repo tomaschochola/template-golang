@@ -1,5 +1,5 @@
 * text=auto eol=lf
 
-*.svg -merge -diff
+go.sum -merge
 
-go.sum -merge -diff
+package-lock.json -merge

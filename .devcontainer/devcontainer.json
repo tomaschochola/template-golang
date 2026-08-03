@@ -1,0 +1,21 @@
+{
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": ["EditorConfig.EditorConfig", "golang.Go"],
+      "settings": {
+        "files.insertFinalNewline": true,
+        "files.trimFinalNewlines": true,
+        "files.trimTrailingWhitespace": true
+      }
+    }
+  },
+  "init": true,
+  "postCreateCommand": ["make", "postcreate"],
+  "remoteUser": "devcontainer",
+  "updateRemoteUserUID": true,
+  "waitFor": "postCreateCommand",
+  "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}"
+}

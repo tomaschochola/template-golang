@@ -14,61 +14,6 @@ MAKEFLAGS += --no-builtin-variables
 .SUFFIXES:
 .NOTPARALLEL:
 
-# Tooling
-
-GO ?= go
-GOFMT ?= gofmt
-SUDO ?= sudo
-PACMAN ?= pacman
-ARCH_PACKAGES ?= base base-devel go git clang graphviz
-GOWORK ?= off
-GOAMD64 ?= v3
-
-export GOWORK GOAMD64
-
-# Project configuration
-
-MODULE := $(shell $(GO) list -m 2>/dev/null)
-PACKAGES ?= ./...
-COVER_PACKAGES ?= ./...
-COMMAND ?= template-golang
-COMMAND_DIR ?= ./cmd/$(COMMAND)
-COMMAND_PACKAGE ?= $(COMMAND_DIR)
-BINARY ?= ./build/$(COMMAND)
-
-# Verification knobs
-
-TEST_CPU ?= 1,2,4,8
-TEST_TIMEOUT ?= 2m
-BENCH ?= .
-BENCH_TIME ?= 1s
-BENCH_COUNT ?= 5
-FUZZ_PACKAGE ?= ./internal/app
-FUZZ_TARGET ?= FuzzMessage
-FUZZ_TIME ?= 10s
-PROFILE_PACKAGE ?= ./internal/app
-GOVULNCHECK_SHOW ?= version
-BUILD_CGO_ENABLED ?= 0
-GO_BUILDMODE ?= pie
-FIPS_MODE ?= latest
-RUN_ARGS ?=
-MSAN_CC ?= clang
-VERSION ?= dev
-
-# Generated artifacts
-
-COVERAGE_PROFILE ?= coverage.out
-COVERAGE_HTML ?= coverage.html
-PROFILE_DIR ?= ./build/profiles
-INTEGRATION_COVERAGE_DIR ?= ./build/coverage-integration
-INTEGRATION_COVERAGE_PROFILE ?= ./build/coverage-integration.out
-
-# Shared official Go flags
-
-GO_LDFLAGS ?= -X main.version=$(VERSION)
-GO_BUILD_FLAGS := -mod=readonly -trimpath -buildvcs=true -buildmode=$(GO_BUILDMODE) -pgo=auto -ldflags "$(GO_LDFLAGS)"
-GO_TEST_FLAGS := -mod=readonly -v -race -count=2 -shuffle=on -vet=all -cpu=$(TEST_CPU) -timeout=$(TEST_TIMEOUT) -fullpath -covermode=atomic -coverpkg=$(COVER_PACKAGES)
-
 # Default goal
 
 .DEFAULT_GOAL := never
@@ -79,23 +24,19 @@ never:
 	printf '%s\n' 'No default target. Run an explicit target' >&2
 	exit 1
 
+# Options
+
+DEVCONTAINER_FILTER := label=devcontainer.local_folder=$(CURDIR)
+
+export GOWORK := off
+
 # Goals
 
-.PHONY: arch archlinux pacman
-arch archlinux pacman:
-	$(SUDO) $(PACMAN) -Syu --needed $(ARCH_PACKAGES)
-
-.PHONY: all
-all: build go_build_metadata
-
 .PHONY: fix
-fix: go_fix gofmt_fix goimports_fix tidy_fix
+fix: go_fix gofmt_fix goimports_fix tidy_fix trimmer_fix
 
 .PHONY: check
-check: lint static test audit
-
-.PHONY: deep_check
-deep_check: check coverage integration_coverage benchmark fuzz profile sanitize msan_check fips_check build_fips
+check: trimmer_check lint static test audit coverage integration_coverage benchmark fuzz profile asan_check msan_check
 
 .PHONY: lint
 lint: gofmt_check goimports_check
@@ -109,141 +50,221 @@ test: go_test
 .PHONY: coverage
 coverage: go_coverage
 
-.PHONY: sanitize
-sanitize: asan_check
-
 .PHONY: audit
-audit: go_module_audit go_package_audit go_source_audit go_binary_audit
+audit: npm_audit go_module_audit go_package_audit go_source_audit go_binary_audit
+
+.PHONY: deps_install
+deps_install: npm_install
+
+.PHONY: deps_update
+deps_update: npm_update
 
 .PHONY: clean
 clean:
 	rm -rf ./build
-	rm -f "$(COVERAGE_HTML)" "$(COVERAGE_PROFILE)"
+	rm -f ./coverage.html ./coverage.out
+
+.PHONY: deps_clean
+deps_clean:
+	rm -rf ./node_modules
 
 .PHONY: distclean
-distclean: clean
+distclean: clean deps_clean
 
 .PHONY: nuke
-nuke: distclean
+nuke: down distclean
+
+.PHONY: trimmer_fix
+trimmer_fix: ./node_modules/.package-lock.json ./package.json ./package-lock.json
+	npm exec --ignore-scripts -- trimmer fix .
+
+.PHONY: trimmer_check
+trimmer_check: ./node_modules/.package-lock.json ./package.json ./package-lock.json
+	npm exec --ignore-scripts -- trimmer check .
+
+.PHONY: npm_audit
+npm_audit: ./node_modules/.package-lock.json ./package.json ./package-lock.json
+	npm audit --ignore-scripts --audit-level=high --install-links --include=prod --include=dev --include=peer --include=optional
+
+.PHONY: npm_install
+npm_install: ./package.json ./package-lock.json
+	npm ci --ignore-scripts --install-links --include=prod --include=dev --include=peer --include=optional
+
+.PHONY: npm_update
+npm_update: deps_clean ./package.json
+	npm update --ignore-scripts --install-links --include=prod --include=dev --include=peer --include=optional
+
+.PHONY: postcreate
+postcreate: deps_install
+
+.PHONY: devcontainer_check
+devcontainer_check:
+	devcontainer read-configuration --workspace-folder . >/dev/null
+	docker build --check --file ./.devcontainer/Dockerfile ./.devcontainer
+
+.PHONY: up
+up: devcontainer_check
+	devcontainer up --workspace-folder .
+
+.PHONY: devcontainer
+devcontainer: up
+	devcontainer exec --workspace-folder . /bin/bash
+
+.PHONY: status
+status:
+	docker container ls --all --filter "$(DEVCONTAINER_FILTER)"
+
+.PHONY: stop
+stop:
+	docker container ls --quiet --filter "$(DEVCONTAINER_FILTER)" | while IFS= read -r container; do docker container stop "$$container"; done
+
+.PHONY: restart
+restart:
+	docker container ls --all --quiet --filter "$(DEVCONTAINER_FILTER)" | while IFS= read -r container; do docker container restart "$$container"; done
+
+.PHONY: down
+down: stop
+	docker container ls --all --quiet --filter "$(DEVCONTAINER_FILTER)" | while IFS= read -r container; do docker container rm --volumes "$$container"; done
+
+.PHONY: rebuild
+rebuild: devcontainer_check down
+	devcontainer up --workspace-folder .
+
+.PHONY: rebuild_no_cache
+rebuild_no_cache: devcontainer_check down
+	devcontainer up --workspace-folder . --build-no-cache
 
 .PHONY: go_fix
 go_fix:
-	$(GO) fix $(PACKAGES)
+	go fix ./...
 
 .PHONY: tidy_fix
 tidy_fix:
-	$(GO) mod tidy
+	go mod tidy
 
 .PHONY: gofmt_fix
 gofmt_fix:
-	$(GOFMT) -e -s -w .
+	gofmt -e -s -w .
 
 .PHONY: goimports_fix
 goimports_fix:
-	$(GO) tool goimports -e -local $(MODULE) -w .
+	go tool goimports -e -local "$$(go list -m)" -w .
 
 .PHONY: tidy_check
 tidy_check:
-	$(GO) mod tidy -diff
+	go mod tidy -diff
 
 .PHONY: gofmt_check
 gofmt_check:
-	out=$$($(GOFMT) -e -s -l .); if [ -n "$$out" ]; then printf '%s\n' "$$out" >&2; exit 1; fi
+	out=$$(gofmt -e -s -l .); if [ -n "$$out" ]; then printf '%s\n' "$$out" >&2; exit 1; fi
 
 .PHONY: goimports_check
 goimports_check:
-	out=$$($(GO) tool goimports -e -local $(MODULE) -l .); if [ -n "$$out" ]; then printf '%s\n' "$$out" >&2; exit 1; fi
+	out=$$(go tool goimports -e -local "$$(go list -m)" -l .); if [ -n "$$out" ]; then printf '%s\n' "$$out" >&2; exit 1; fi
 
 .PHONY: go_list_check
 go_list_check:
-	$(GO) list -mod=readonly -deps -test $(PACKAGES) >/dev/null
+	go list -mod=readonly -deps -test ./... >/dev/null
 
 .PHONY: go_fix_check
 go_fix_check:
-	$(GO) fix -diff $(PACKAGES)
+	go fix -diff ./...
 
 .PHONY: build_check
 build_check:
-	$(GO) build $(GO_BUILD_FLAGS) $(PACKAGES)
+	go build -mod=readonly -trimpath -buildvcs=true -buildmode=pie -pgo=auto ./...
 
 .PHONY: vet_check
 vet_check:
-	$(GO) vet -mod=readonly $(PACKAGES)
+	go vet -mod=readonly ./...
 
 .PHONY: shadow_check
 shadow_check:
-	$(GO) tool shadow -strict $(PACKAGES)
+	go tool shadow -strict ./...
 
 .PHONY: go_test
 go_test:
-	$(GO) test $(GO_TEST_FLAGS) $(PACKAGES)
+	go test -mod=readonly -v -race -count=2 -shuffle=on -vet=all -cpu=1,2,4,8 -timeout=2m -fullpath -covermode=atomic -coverpkg=./... ./...
 
 .PHONY: go_coverage
 go_coverage:
-	$(GO) test $(GO_TEST_FLAGS) -coverprofile="$(COVERAGE_PROFILE)" $(PACKAGES)
-	$(GO) tool cover -func="$(COVERAGE_PROFILE)"
-	$(GO) tool cover -html="$(COVERAGE_PROFILE)" -o "$(COVERAGE_HTML)"
+	go test -mod=readonly -v -race -count=2 -shuffle=on -vet=all -cpu=1,2,4,8 -timeout=2m -fullpath -covermode=atomic -coverpkg=./... -coverprofile=./coverage.out ./...
+	go tool cover -func=./coverage.out
+	go tool cover -html=./coverage.out -o ./coverage.html
 
 .PHONY: integration_coverage
 integration_coverage:
-	rm -rf "$(INTEGRATION_COVERAGE_DIR)"
-	mkdir -p "$(INTEGRATION_COVERAGE_DIR)"
-	CGO_ENABLED=$(BUILD_CGO_ENABLED) $(GO) build $(GO_BUILD_FLAGS) -cover -covermode=atomic -coverpkg=$(COVER_PACKAGES) -o "$(BINARY).cover" $(COMMAND_PACKAGE)
-	GOCOVERDIR="$(INTEGRATION_COVERAGE_DIR)" "$(BINARY).cover" $(RUN_ARGS)
-	$(GO) tool covdata percent -i="$(INTEGRATION_COVERAGE_DIR)"
-	$(GO) tool covdata textfmt -i="$(INTEGRATION_COVERAGE_DIR)" -o "$(INTEGRATION_COVERAGE_PROFILE)"
-	$(GO) tool cover -func="$(INTEGRATION_COVERAGE_PROFILE)"
+	rm -rf ./build/coverage-integration
+	mkdir -p ./build/coverage-integration
+	CGO_ENABLED=0 go build \
+		-mod=readonly \
+		-trimpath \
+		-buildvcs=true \
+		-buildmode=pie \
+		-pgo=auto \
+		-cover \
+		-covermode=atomic \
+		-coverpkg=./... \
+		-o ./build/template-golang.cover \
+		./cmd/template-golang
+	GOCOVERDIR=./build/coverage-integration ./build/template-golang.cover
+	go tool covdata percent -i=./build/coverage-integration
+	go tool covdata textfmt -i=./build/coverage-integration -o ./build/coverage-integration.out
+	go tool cover -func=./build/coverage-integration.out
 
 .PHONY: benchmark
 benchmark:
-	$(GO) test -mod=readonly -run=^$$ -bench=$(BENCH) -benchmem -count=$(BENCH_COUNT) -benchtime=$(BENCH_TIME) $(PACKAGES)
+	go test -mod=readonly -run=^$$ -bench=. -benchmem -count=5 -benchtime=1s ./...
 
 .PHONY: fuzz
 fuzz:
-	$(GO) test -mod=readonly -run=^$$ -fuzz=$(FUZZ_TARGET) -fuzztime=$(FUZZ_TIME) $(FUZZ_PACKAGE)
+	go test -mod=readonly -run=^$$ -fuzz=FuzzMessage -fuzztime=10s ./internal/app
 
 .PHONY: profile
 profile:
-	mkdir -p "$(PROFILE_DIR)"
-	$(GO) test -mod=readonly -run=^$$ -bench=$(BENCH) -benchmem -count=1 -benchtime=$(BENCH_TIME) -o "$(PROFILE_DIR)/profile.test" -cpuprofile="$(PROFILE_DIR)/cpu.pprof" -memprofile="$(PROFILE_DIR)/mem.pprof" -blockprofile="$(PROFILE_DIR)/block.pprof" -mutexprofile="$(PROFILE_DIR)/mutex.pprof" $(PROFILE_PACKAGE)
+	mkdir -p ./build/profiles
+	go test \
+		-mod=readonly \
+		-run=^$$ \
+		-bench=. \
+		-benchmem \
+		-count=1 \
+		-benchtime=1s \
+		-o ./build/profiles/profile.test \
+		-cpuprofile=./build/profiles/cpu.pprof \
+		-memprofile=./build/profiles/mem.pprof \
+		-blockprofile=./build/profiles/block.pprof \
+		-mutexprofile=./build/profiles/mutex.pprof \
+		./internal/app
 
 .PHONY: go_module_audit
 go_module_audit:
-	$(GO) mod verify
-	$(GO) tool govulncheck -scan=module -test -show=$(GOVULNCHECK_SHOW) -C $(COMMAND_DIR)
+	go mod verify
+	go tool govulncheck -scan=module -test -show=version -C ./cmd/template-golang
 
 .PHONY: go_package_audit
 go_package_audit:
-	$(GO) tool govulncheck -scan=package -test -show=$(GOVULNCHECK_SHOW) $(PACKAGES)
+	go tool govulncheck -scan=package -test -show=version ./...
 
 .PHONY: go_source_audit
 go_source_audit:
-	$(GO) tool govulncheck -scan=symbol -test -show=$(GOVULNCHECK_SHOW) $(PACKAGES)
+	go tool govulncheck -scan=symbol -test -show=version ./...
 
 .PHONY: go_binary_audit
-go_binary_audit: build go_build_metadata
-	$(GO) tool govulncheck -mode=binary -show=$(GOVULNCHECK_SHOW) "$(BINARY)"
-
-.PHONY: go_build_metadata
-go_build_metadata: build
-	$(GO) version -m -json "$(BINARY)"
+go_binary_audit: build
+	go tool govulncheck -mode=binary -show=version ./build/template-golang
 
 .PHONY: asan_check
 asan_check:
-	CGO_ENABLED=1 $(GO) test -mod=readonly -asan -count=1 -run=. $(PACKAGES)
+	CGO_ENABLED=1 go test -mod=readonly -asan -count=1 -run=. ./...
 
 .PHONY: msan_check
 msan_check:
-	CGO_ENABLED=1 CC=$(MSAN_CC) $(GO) test -mod=readonly -msan -count=1 -run=. $(PACKAGES)
-
-.PHONY: fips_check
-fips_check:
-	GOFIPS140=$(FIPS_MODE) $(GO) test -mod=readonly -count=1 -run=. $(PACKAGES)
+	CGO_ENABLED=1 CC=clang go test -mod=readonly -msan -count=1 -run=. ./...
 
 .PHONY: build
 build:
-	CGO_ENABLED=$(BUILD_CGO_ENABLED) $(GO) build $(GO_BUILD_FLAGS) -o "$(BINARY)" $(COMMAND_PACKAGE)
+	CGO_ENABLED=0 go build -mod=readonly -trimpath -buildvcs=true -buildmode=pie -pgo=auto -o ./build/template-golang ./cmd/template-golang
 
-.PHONY: build_fips
-build_fips:
-	GOFIPS140=$(FIPS_MODE) CGO_ENABLED=$(BUILD_CGO_ENABLED) $(GO) build $(GO_BUILD_FLAGS) -o "$(BINARY).fips" $(COMMAND_PACKAGE)
+./node_modules/.package-lock.json: ./package.json ./package-lock.json
+	$(MAKE) npm_install

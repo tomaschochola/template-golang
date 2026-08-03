@@ -6,6 +6,9 @@
 .zed
 .antigravitycli
 
+# node
+/node_modules
+
 # environment files and secrets
 /.env
 /.secrets

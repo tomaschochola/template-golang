@@ -1,0 +1,41 @@
+{
+  "author": {
+    "email": "tomaschochola@tomaschochola.cz",
+    "name": "Tomáš Chochola",
+    "url": "https://github.com/tomaschochola"
+  },
+  "bugs": {
+    "email": "tomaschochola@tomaschochola.cz",
+    "url": "https://github.com/tomaschochola/template-golang/issues"
+  },
+  "contributors": [
+    {
+      "email": "tomaschochola@tomaschochola.cz",
+      "name": "Tomáš Chochola",
+      "url": "https://github.com/tomaschochola"
+    }
+  ],
+  "description": "@tomaschochola/template-golang",
+  "devDependencies": {
+    "@tomaschochola/tooling-trimmer": "github:tomaschochola/tooling-trimmer#2.x"
+  },
+  "funding": {
+    "type": "github",
+    "url": "https://github.com/sponsors/tomaschochola"
+  },
+  "homepage": "https://github.com/tomaschochola/template-golang",
+  "keywords": [
+    "tomaschochola",
+    "TomasChochola",
+    "Tomas Chochola",
+    "Tomáš Chochola",
+    "template-golang"
+  ],
+  "license": "CC-BY-ND-4.0",
+  "name": "@tomaschochola/template-golang",
+  "private": true,
+  "repository": "github:tomaschochola/template-golang",
+  "sideEffects": false,
+  "type": "module",
+  "version": "0.0.0"
+}

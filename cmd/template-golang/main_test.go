@@ -24,7 +24,6 @@ func TestRun(t *testing.T) {
 	tests := []struct {
 		name       string
 		args       []string
-		version    string
 		wantStdout string
 		wantErr    bool
 		wantErrIs  error
@@ -32,9 +31,6 @@ func TestRun(t *testing.T) {
 		{name: "default", wantStdout: app.DefaultMessage + "\n"},
 		{name: "custom message", args: []string{"Ahoj"}, wantStdout: "Ahoj\n"},
 		{name: "message starting with dash", args: []string{"--", "-Ahoj"}, wantStdout: "-Ahoj\n"},
-		{name: "version", args: []string{"--version"}, version: "1.2.3", wantStdout: "template-golang 1.2.3\n"},
-		{name: "empty version fallback", args: []string{"--version"}, wantStdout: "template-golang dev\n"},
-		{name: "version rejects message", args: []string{"--version", "Ahoj"}, wantErr: true},
 		{name: "too many args", args: []string{"one", "two"}, wantErr: true},
 		{name: "invalid flag", args: []string{"--unknown"}, wantErr: true},
 		{name: "invalid utf8", args: []string{string([]byte{0xff})}, wantErr: true, wantErrIs: app.ErrInvalidMessage},
@@ -48,7 +44,7 @@ func TestRun(t *testing.T) {
 			var stdout bytes.Buffer
 			var stderr bytes.Buffer
 
-			err := run(&stdout, &stderr, tt.args, tt.version)
+			err := run(&stdout, &stderr, tt.args)
 			if tt.wantErr {
 				if err == nil {
 					t.Fatalf("run() error = nil, want error")
@@ -74,7 +70,7 @@ func TestRunHelp(t *testing.T) {
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
 
-	if err := run(&stdout, &stderr, []string{"--help"}, "test"); err != nil {
+	if err := run(&stdout, &stderr, []string{"--help"}); err != nil {
 		t.Fatalf("run() error = %v, want nil", err)
 	}
 
@@ -90,7 +86,7 @@ func TestRunHelp(t *testing.T) {
 func TestRunPropagatesWriteError(t *testing.T) {
 	t.Parallel()
 
-	err := run(failingWriter{}, io.Discard, []string{"Ahoj"}, "test")
+	err := run(failingWriter{}, io.Discard, []string{"Ahoj"})
 	if !errors.Is(err, errFailingWriter) {
 		t.Fatalf("run() error = %v, want %v", err, errFailingWriter)
 	}
