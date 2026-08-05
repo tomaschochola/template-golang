@@ -1,0 +1,15 @@
+# node
+/package-lock.json
+
+# svg
+*.svg
+
+# eslint
+*.cjs
+*.cts
+*.js
+*.jsx
+*.mjs
+*.mts
+*.ts
+*.tsx

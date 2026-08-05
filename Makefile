@@ -33,13 +33,13 @@ export GOWORK := off
 # Goals
 
 .PHONY: fix
-fix: go_fix gofmt_fix goimports_fix tidy_fix trimmer_fix
+fix: go_fix gofmt_fix goimports_fix prettier_fix tidy_fix trimmer_fix
 
 .PHONY: check
 check: trimmer_check lint static test audit coverage integration_coverage benchmark fuzz profile asan_check msan_check
 
 .PHONY: lint
-lint: gofmt_check goimports_check
+lint: gofmt_check goimports_check prettier_check
 
 .PHONY: static
 static: tidy_check go_list_check go_fix_check build_check vet_check shadow_check
@@ -81,6 +81,14 @@ trimmer_fix: ./node_modules/.package-lock.json ./package.json ./package-lock.jso
 .PHONY: trimmer_check
 trimmer_check: ./node_modules/.package-lock.json ./package.json ./package-lock.json
 	npm exec --ignore-scripts -- trimmer check .
+
+.PHONY: prettier_fix
+prettier_fix: ./node_modules/.package-lock.json ./package.json ./package-lock.json ./prettier.config.js
+	npm exec --ignore-scripts -- prettier -w .
+
+.PHONY: prettier_check
+prettier_check: ./node_modules/.package-lock.json ./package.json ./package-lock.json ./prettier.config.js
+	npm exec --ignore-scripts -- prettier -c .
 
 .PHONY: npm_audit
 npm_audit: ./node_modules/.package-lock.json ./package.json ./package-lock.json
