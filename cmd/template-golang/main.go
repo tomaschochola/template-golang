@@ -7,7 +7,7 @@ import (
 	"io"
 	"os"
 
-	"github.com/tomaschochola/template-golang/internal/app"
+	"github.com/tomaschochola/template-golang/v2/internal/app"
 )
 
 const commandName = "template-golang"

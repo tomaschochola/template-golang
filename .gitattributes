@@ -1,5 +1,4 @@
 * text=auto eol=lf
 
-go.sum -merge
-
-package-lock.json -merge
+go.sum -merge linguist-generated
+package-lock.json -merge linguist-generated

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"unicode/utf8"
 
-	"github.com/tomaschochola/template-golang/internal/app"
+	"github.com/tomaschochola/template-golang/v2/internal/app"
 )
 
 func TestMessage(t *testing.T) {

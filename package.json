@@ -15,7 +15,7 @@
       "url": "https://github.com/tomaschochola"
     }
   ],
-  "description": "@tomaschochola/template-golang",
+  "description": "Go application template with testing, static analysis, and vulnerability checks.",
   "devDependencies": {
     "@tomaschochola/tooling-trimmer": "github:tomaschochola/tooling-trimmer#2.x"
   },
@@ -34,8 +34,10 @@
   "license": "CC-BY-ND-4.0",
   "name": "@tomaschochola/template-golang",
   "private": true,
-  "repository": "github:tomaschochola/template-golang",
-  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tomaschochola/template-golang.git"
+  },
   "type": "module",
   "version": "0.0.0"
 }

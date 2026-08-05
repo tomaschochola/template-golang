@@ -1,4 +1,4 @@
-module github.com/tomaschochola/template-golang
+module github.com/tomaschochola/template-golang/v2
 
 go 1.26.5
 
