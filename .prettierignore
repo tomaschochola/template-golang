@@ -1,2 +1,6 @@
+# go
+/go.mod
+/go.sum
+
 # node
 /package-lock.json
