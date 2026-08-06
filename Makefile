@@ -30,13 +30,16 @@ DEVCONTAINER_FILTER := label=devcontainer.local_folder=$(CURDIR)
 
 export GOWORK := off
 
-# Goals
+# Public goals
+
+.PHONY: all
+all: check build coverage benchmark profile
 
 .PHONY: fix
-fix: go_fix gofmt_fix goimports_fix prettier_fix tidy_fix trimmer_fix
+fix: go_fix gofmt_fix goimports_fix tidy_fix prettier_fix trimmer_fix
 
 .PHONY: check
-check: trimmer_check lint static test audit coverage integration_coverage benchmark fuzz profile asan_check msan_check
+check: trimmer_check lint static test audit fuzz asan_check msan_check
 
 .PHONY: lint
 lint: gofmt_check goimports_check prettier_check
@@ -50,8 +53,55 @@ test: go_test
 .PHONY: coverage
 coverage: go_coverage
 
+.PHONY: report
+report: coverage_serve
+
 .PHONY: audit
 audit: npm_audit go_module_audit go_package_audit go_source_audit go_binary_audit
+
+.PHONY: clean
+clean:
+	rm -rf ./build
+
+.PHONY: distclean
+distclean: clean deps_clean
+
+.PHONY: benchmark
+benchmark: go_benchmark
+
+.PHONY: fuzz
+fuzz: go_fuzz
+
+.PHONY: profile
+profile: go_profile
+
+.PHONY: build
+build: go_build
+
+.PHONY: postcreate
+postcreate: deps_install
+
+.PHONY: up
+up: devcontainer_check
+	devcontainer up --workspace-folder .
+
+.PHONY: devcontainer
+devcontainer: up
+	devcontainer exec --workspace-folder . /bin/bash
+
+.PHONY: stop
+stop:
+	docker container ls --quiet --filter "$(DEVCONTAINER_FILTER)" | while IFS= read -r container; do docker container stop "$$container"; done
+
+.PHONY: down
+down: stop
+	docker container ls --all --quiet --filter "$(DEVCONTAINER_FILTER)" | while IFS= read -r container; do docker container rm "$$container"; done
+
+.PHONY: rebuild
+rebuild: devcontainer_check down
+	devcontainer up --workspace-folder . --build-no-cache
+
+# Protected goals
 
 .PHONY: deps_install
 deps_install: npm_install
@@ -59,20 +109,9 @@ deps_install: npm_install
 .PHONY: deps_update
 deps_update: npm_update
 
-.PHONY: clean
-clean:
-	rm -rf ./build
-	rm -f ./coverage.html ./coverage.out
-
 .PHONY: deps_clean
 deps_clean:
 	rm -rf ./node_modules
-
-.PHONY: distclean
-distclean: clean deps_clean
-
-.PHONY: nuke
-nuke: down distclean
 
 .PHONY: trimmer_fix
 trimmer_fix: ./node_modules/.package-lock.json ./package.json ./package-lock.json
@@ -102,45 +141,10 @@ npm_install: ./package.json ./package-lock.json
 npm_update: deps_clean ./package.json
 	npm update --ignore-scripts --install-links --include=prod --include=dev --include=peer --include=optional
 
-.PHONY: postcreate
-postcreate: deps_install
-
 .PHONY: devcontainer_check
 devcontainer_check:
 	devcontainer read-configuration --workspace-folder . >/dev/null
 	docker build --check --file ./.devcontainer/Dockerfile ./.devcontainer
-
-.PHONY: up
-up: devcontainer_check
-	devcontainer up --workspace-folder .
-
-.PHONY: devcontainer
-devcontainer: up
-	devcontainer exec --workspace-folder . /bin/bash
-
-.PHONY: status
-status:
-	docker container ls --all --filter "$(DEVCONTAINER_FILTER)"
-
-.PHONY: stop
-stop:
-	docker container ls --quiet --filter "$(DEVCONTAINER_FILTER)" | while IFS= read -r container; do docker container stop "$$container"; done
-
-.PHONY: restart
-restart:
-	docker container ls --all --quiet --filter "$(DEVCONTAINER_FILTER)" | while IFS= read -r container; do docker container restart "$$container"; done
-
-.PHONY: down
-down: stop
-	docker container ls --all --quiet --filter "$(DEVCONTAINER_FILTER)" | while IFS= read -r container; do docker container rm --volumes "$$container"; done
-
-.PHONY: rebuild
-rebuild: devcontainer_check down
-	devcontainer up --workspace-folder .
-
-.PHONY: rebuild_no_cache
-rebuild_no_cache: devcontainer_check down
-	devcontainer up --workspace-folder . --build-no-cache
 
 .PHONY: go_fix
 go_fix:
@@ -192,58 +196,32 @@ shadow_check:
 
 .PHONY: go_test
 go_test:
-	go test -mod=readonly -v -race -count=2 -shuffle=on -vet=all -cpu=1,2,4,8 -timeout=2m -fullpath -covermode=atomic -coverpkg=./... ./...
+	go test -mod=readonly -v -race -count=2 -shuffle=on -vet=all -cpu=1,2,4,8 -timeout=2m -fullpath ./...
 
 .PHONY: go_coverage
 go_coverage:
-	go test -mod=readonly -v -race -count=2 -shuffle=on -vet=all -cpu=1,2,4,8 -timeout=2m -fullpath -covermode=atomic -coverpkg=./... -coverprofile=./coverage.out ./...
-	go tool cover -func=./coverage.out
-	go tool cover -html=./coverage.out -o ./coverage.html
+	rm -rf ./build/coverage
+	mkdir -p ./build/coverage/html
+	go test -mod=readonly -v -count=1 -vet=all -timeout=2m -fullpath -covermode=atomic -coverpkg=./... -coverprofile=./build/coverage/coverage.out ./...
+	go tool cover -func=./build/coverage/coverage.out
+	go tool cover -html=./build/coverage/coverage.out -o ./build/coverage/html/index.html
 
-.PHONY: integration_coverage
-integration_coverage:
-	rm -rf ./build/coverage-integration
-	mkdir -p ./build/coverage-integration
-	CGO_ENABLED=0 go build \
-		-mod=readonly \
-		-trimpath \
-		-buildvcs=true \
-		-buildmode=pie \
-		-pgo=auto \
-		-cover \
-		-covermode=atomic \
-		-coverpkg=./... \
-		-o ./build/template-golang.cover \
-		./cmd/template-golang
-	GOCOVERDIR=./build/coverage-integration ./build/template-golang.cover
-	go tool covdata percent -i=./build/coverage-integration
-	go tool covdata textfmt -i=./build/coverage-integration -o ./build/coverage-integration.out
-	go tool cover -func=./build/coverage-integration.out
+.PHONY: coverage_serve
+coverage_serve: go_coverage
+	node --eval 'const fs = require("node:fs"); const http = require("node:http"); http.createServer((_request, response) => { response.setHeader("Content-Type", "text/html; charset=utf-8"); fs.createReadStream("./build/coverage/html/index.html").pipe(response); }).listen(61031, "0.0.0.0", () => console.log("Coverage report: http://localhost:61031"));'
 
-.PHONY: benchmark
-benchmark:
+.PHONY: go_benchmark
+go_benchmark:
 	go test -mod=readonly -run=^$$ -bench=. -benchmem -count=5 -benchtime=1s ./...
 
-.PHONY: fuzz
-fuzz:
+.PHONY: go_fuzz
+go_fuzz:
 	go test -mod=readonly -run=^$$ -fuzz=FuzzMessage -fuzztime=10s ./internal/app
 
-.PHONY: profile
-profile:
+.PHONY: go_profile
+go_profile:
 	mkdir -p ./build/profiles
-	go test \
-		-mod=readonly \
-		-run=^$$ \
-		-bench=. \
-		-benchmem \
-		-count=1 \
-		-benchtime=1s \
-		-o ./build/profiles/profile.test \
-		-cpuprofile=./build/profiles/cpu.pprof \
-		-memprofile=./build/profiles/mem.pprof \
-		-blockprofile=./build/profiles/block.pprof \
-		-mutexprofile=./build/profiles/mutex.pprof \
-		./internal/app
+	go test -mod=readonly -run=^$$ -bench=. -benchmem -count=1 -benchtime=1s -o ./build/profiles/profile.test -cpuprofile=./build/profiles/cpu.pprof -memprofile=./build/profiles/mem.pprof -blockprofile=./build/profiles/block.pprof -mutexprofile=./build/profiles/mutex.pprof ./internal/app
 
 .PHONY: go_module_audit
 go_module_audit:
@@ -259,7 +237,7 @@ go_source_audit:
 	go tool govulncheck -scan=symbol -test -show=version ./...
 
 .PHONY: go_binary_audit
-go_binary_audit: build
+go_binary_audit: go_build
 	go tool govulncheck -mode=binary -show=version ./build/template-golang
 
 .PHONY: asan_check
@@ -270,9 +248,12 @@ asan_check:
 msan_check:
 	CGO_ENABLED=1 CC=clang go test -mod=readonly -msan -count=1 -run=. ./...
 
-.PHONY: build
-build:
+.PHONY: go_build
+go_build:
+	mkdir -p ./build
 	CGO_ENABLED=0 go build -mod=readonly -trimpath -buildvcs=true -buildmode=pie -pgo=auto -o ./build/template-golang ./cmd/template-golang
+
+# Private targets
 
 ./node_modules/.package-lock.json: ./package.json ./package-lock.json
 	$(MAKE) npm_install
