@@ -107,7 +107,7 @@ rebuild: devcontainer_check down
 deps_install: npm_install
 
 .PHONY: deps_update
-deps_update: npm_update
+deps_update: npm_update go_update
 
 .PHONY: deps_clean
 deps_clean:
@@ -145,6 +145,11 @@ npm_update: deps_clean ./package.json
 devcontainer_check:
 	devcontainer read-configuration --workspace-folder . >/dev/null
 	docker build --check --file ./.devcontainer/Dockerfile ./.devcontainer
+
+.PHONY: go_update
+go_update:
+	go get -u all
+	go mod tidy
 
 .PHONY: go_fix
 go_fix:
