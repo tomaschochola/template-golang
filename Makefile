@@ -115,11 +115,11 @@ deps_clean:
 
 .PHONY: trimmer_fix
 trimmer_fix: ./node_modules/.package-lock.json ./package.json ./package-lock.json
-	npm exec --ignore-scripts -- trimmer fix .
+	npm exec --ignore-scripts -- tooling-trimmer fix .
 
 .PHONY: trimmer_check
 trimmer_check: ./node_modules/.package-lock.json ./package.json ./package-lock.json
-	npm exec --ignore-scripts -- trimmer check .
+	npm exec --ignore-scripts -- tooling-trimmer check .
 
 .PHONY: prettier_fix
 prettier_fix: ./node_modules/.package-lock.json ./package.json ./package-lock.json ./prettier.config.js
