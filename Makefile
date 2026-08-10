@@ -32,32 +32,32 @@ export GOWORK := off
 
 # Public goals
 
-.PHONY: all
-all: check build coverage benchmark profile
-
 .PHONY: fix
-fix: go_fix gofmt_fix goimports_fix tidy_fix prettier_fix trimmer_fix
+fix: go_fix gofmt_fix goimports_fix go_mod_fix prettier_fix trimmer_fix
 
 .PHONY: check
-check: trimmer_check lint static test audit fuzz asan_check msan_check
+check: doctor lint analyze test fuzz audit
+
+.PHONY: doctor
+doctor: git_check npm_config_check npm_doctor
 
 .PHONY: lint
-lint: gofmt_check goimports_check prettier_check
+lint: gofmt_check goimports_check prettier_check trimmer_check
 
-.PHONY: static
-static: tidy_check go_list_check go_fix_check build_check vet_check shadow_check
+.PHONY: analyze
+analyze: npm_check go_mod_check go_list_check go_fix_check go_build_check go_vet_check shadow_check
 
 .PHONY: test
-test: go_test
+test: go_test asan_check msan_check
 
 .PHONY: coverage
 coverage: go_coverage
 
-.PHONY: report
-report: coverage_serve
-
 .PHONY: audit
-audit: npm_audit go_module_audit go_package_audit go_source_audit go_binary_audit
+audit: npm_audit go_audit
+
+.PHONY: update
+update: npm_config_check ./package.json ./package-lock.json ./go.mod ./go.sum npm_update go_mod_update
 
 .PHONY: clean
 clean:
@@ -65,6 +65,9 @@ clean:
 
 .PHONY: distclean
 distclean: clean deps_clean
+
+.PHONY: build
+build: go_build
 
 .PHONY: benchmark
 benchmark: go_benchmark
@@ -75,9 +78,6 @@ fuzz: go_fuzz
 .PHONY: profile
 profile: go_profile
 
-.PHONY: build
-build: go_build
-
 .PHONY: postcreate
 postcreate: deps_install
 
@@ -85,8 +85,8 @@ postcreate: deps_install
 up: devcontainer_check
 	devcontainer up --workspace-folder .
 
-.PHONY: devcontainer
-devcontainer: up
+.PHONY: shell
+shell: up
 	devcontainer exec --workspace-folder . /bin/bash
 
 .PHONY: stop
@@ -106,48 +106,63 @@ rebuild: devcontainer_check down
 .PHONY: deps_install
 deps_install: npm_install
 
-.PHONY: deps_update
-deps_update: npm_update go_update
-
 .PHONY: deps_clean
-deps_clean:
-	rm -rf ./node_modules
+deps_clean: npm_clean
 
 .PHONY: trimmer_fix
 trimmer_fix: ./node_modules/.package-lock.json ./package.json ./package-lock.json
-	npm exec --ignore-scripts -- tooling-trimmer fix .
+	npm exec --no --ignore-scripts -- tooling-trimmer fix .
 
 .PHONY: trimmer_check
 trimmer_check: ./node_modules/.package-lock.json ./package.json ./package-lock.json
-	npm exec --ignore-scripts -- tooling-trimmer check .
+	npm exec --no --ignore-scripts -- tooling-trimmer check .
 
 .PHONY: prettier_fix
 prettier_fix: ./node_modules/.package-lock.json ./package.json ./package-lock.json ./prettier.config.js
-	npm exec --ignore-scripts -- prettier -w .
+	npm exec --no --ignore-scripts -- prettier -w .
 
 .PHONY: prettier_check
 prettier_check: ./node_modules/.package-lock.json ./package.json ./package-lock.json ./prettier.config.js
-	npm exec --ignore-scripts -- prettier -c .
+	npm exec --no --ignore-scripts -- prettier -c .
+
+.PHONY: npm_config_check
+npm_config_check: ./.npmrc
+	test "$$(npm config get ignore-scripts)" = "true"
+	test "$$(npm config get allow-directory)" = "root"
+	test "$$(npm config get allow-file)" = "root"
+	test "$$(npm config get allow-git)" = "root"
+	test "$$(npm config get allow-remote)" = "root"
+	test "$$(npm config get audit)" = "false"
+	test "$$(npm config get strict-ssl)" = "true"
+	test "$$(npm config get registry)" = "https://registry.npmjs.org/"
+
+.PHONY: npm_doctor
+npm_doctor:
+	npm doctor connection registry environment permissions cache
+
+.PHONY: npm_check
+npm_check: npm_config_check ./node_modules/.package-lock.json
+	npm ci --dry-run --ignore-scripts --audit=false --install-links --include=prod --include=dev --include=peer --include=optional
+	npm ls --all --install-links --include=prod --include=dev --include=peer --include=optional >/dev/null
 
 .PHONY: npm_audit
-npm_audit: ./node_modules/.package-lock.json ./package.json ./package-lock.json
+npm_audit: npm_config_check ./node_modules/.package-lock.json ./package.json ./package-lock.json
 	npm audit --ignore-scripts --audit-level=high --install-links --include=prod --include=dev --include=peer --include=optional
 
 .PHONY: npm_install
-npm_install: ./package.json ./package-lock.json
+npm_install: npm_config_check ./package.json ./package-lock.json
 	npm ci --ignore-scripts --install-links --include=prod --include=dev --include=peer --include=optional
 
 .PHONY: npm_update
-npm_update: deps_clean ./package.json
+npm_update: npm_config_check ./package.json ./package-lock.json npm_clean
 	npm update --ignore-scripts --install-links --include=prod --include=dev --include=peer --include=optional
 
-.PHONY: devcontainer_check
-devcontainer_check:
-	devcontainer read-configuration --workspace-folder . >/dev/null
-	docker build --check --file ./.devcontainer/Dockerfile ./.devcontainer
+.PHONY: npm_clean
+npm_clean:
+	rm -rf ./node_modules
 
-.PHONY: go_update
-go_update:
+.PHONY: go_mod_update
+go_mod_update: ./go.mod ./go.sum
 	go get -u all
 	go mod tidy
 
@@ -155,8 +170,8 @@ go_update:
 go_fix:
 	go fix ./...
 
-.PHONY: tidy_fix
-tidy_fix:
+.PHONY: go_mod_fix
+go_mod_fix:
 	go mod tidy
 
 .PHONY: gofmt_fix
@@ -167,8 +182,8 @@ gofmt_fix:
 goimports_fix:
 	go tool goimports -e -local "$$(go list -m)" -w .
 
-.PHONY: tidy_check
-tidy_check:
+.PHONY: go_mod_check
+go_mod_check:
 	go mod tidy -diff
 
 .PHONY: gofmt_check
@@ -187,12 +202,12 @@ go_list_check:
 go_fix_check:
 	go fix -diff ./...
 
-.PHONY: build_check
-build_check:
+.PHONY: go_build_check
+go_build_check:
 	go build -mod=readonly -trimpath -buildvcs=true -buildmode=pie -pgo=auto ./...
 
-.PHONY: vet_check
-vet_check:
+.PHONY: go_vet_check
+go_vet_check:
 	go vet -mod=readonly ./...
 
 .PHONY: shadow_check
@@ -211,10 +226,6 @@ go_coverage:
 	go tool cover -func=./build/coverage/coverage.out
 	go tool cover -html=./build/coverage/coverage.out -o ./build/coverage/html/index.html
 
-.PHONY: coverage_serve
-coverage_serve: go_coverage
-	node --eval 'const fs = require("node:fs"); const http = require("node:http"); http.createServer((_request, response) => { response.setHeader("Content-Type", "text/html; charset=utf-8"); fs.createReadStream("./build/coverage/html/index.html").pipe(response); }).listen(61031, "0.0.0.0", () => console.log("Coverage report: http://localhost:61031"));'
-
 .PHONY: go_benchmark
 go_benchmark:
 	go test -mod=readonly -run=^$$ -bench=. -benchmem -count=5 -benchtime=1s ./...
@@ -228,21 +239,12 @@ go_profile:
 	mkdir -p ./build/profiles
 	go test -mod=readonly -run=^$$ -bench=. -benchmem -count=1 -benchtime=1s -o ./build/profiles/profile.test -cpuprofile=./build/profiles/cpu.pprof -memprofile=./build/profiles/mem.pprof -blockprofile=./build/profiles/block.pprof -mutexprofile=./build/profiles/mutex.pprof ./internal/app
 
-.PHONY: go_module_audit
-go_module_audit:
+.PHONY: go_audit
+go_audit: go_build
 	go mod verify
 	go tool govulncheck -scan=module -test -show=version -C ./cmd/template-golang
-
-.PHONY: go_package_audit
-go_package_audit:
 	go tool govulncheck -scan=package -test -show=version ./...
-
-.PHONY: go_source_audit
-go_source_audit:
 	go tool govulncheck -scan=symbol -test -show=version ./...
-
-.PHONY: go_binary_audit
-go_binary_audit: go_build
 	go tool govulncheck -mode=binary -show=version ./build/template-golang
 
 .PHONY: asan_check
@@ -258,7 +260,24 @@ go_build:
 	mkdir -p ./build
 	CGO_ENABLED=0 go build -mod=readonly -trimpath -buildvcs=true -buildmode=pie -pgo=auto -o ./build/template-golang ./cmd/template-golang
 
+.PHONY: coverage_serve
+coverage_serve: go_coverage
+	node --eval 'const fs = require("node:fs"); const http = require("node:http"); http.createServer((_request, response) => { response.setHeader("Content-Type", "text/html; charset=utf-8"); fs.createReadStream("./build/coverage/html/index.html").pipe(response); }).listen(61031, "0.0.0.0", () => console.log("Coverage report: http://localhost:61031"));'
+
+.PHONY: git_check
+git_check:
+	test -z "$$(git ls-files --unmerged)"
+	test -z "$$(git ls-files --cached --ignored --exclude-standard)"
+	git diff --check
+	git diff --cached --check
+	git fsck --full --strict --no-dangling --no-progress
+
+.PHONY: devcontainer_check
+devcontainer_check:
+	devcontainer read-configuration --workspace-folder . >/dev/null
+	docker build --check --file ./.devcontainer/Dockerfile ./.devcontainer
+
 # Private targets
 
-./node_modules/.package-lock.json: ./package.json ./package-lock.json
+./node_modules/.package-lock.json: ./.npmrc ./package.json ./package-lock.json
 	$(MAKE) npm_install
