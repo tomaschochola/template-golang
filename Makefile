@@ -28,15 +28,49 @@ never:
 
 DEVCONTAINER_FILTER := label=devcontainer.local_folder=$(CURDIR)
 
+COVERAGE_MIN ?= 100
+
+DESTDIR ?=
+
+PROGRAM := template-golang
+
+ifeq ($(origin SOURCE_DATE_EPOCH), undefined)
+SOURCE_DATE_EPOCH := $(shell git log -1 --format=%ct 2>/dev/null)
+else
+override SOURCE_DATE_EPOCH := $(value SOURCE_DATE_EPOCH)
+endif
+
+ifeq ($(origin VERSION), undefined)
+VERSION := $(shell git describe --tags --always --dirty 2>/dev/null)
+else
+override VERSION := $(value VERSION)
+endif
+
+export SOURCE_DATE_EPOCH
+export VERSION
+
+PACKAGE_LINUX_AMD64_V1 := $(PROGRAM)-$(VERSION)-linux-amd64-v1
+PACKAGE_LINUX_AMD64_V2 := $(PROGRAM)-$(VERSION)-linux-amd64-v2
+PACKAGE_LINUX_AMD64_V3 := $(PROGRAM)-$(VERSION)-linux-amd64-v3
+PACKAGE_LINUX_ARM64_V8 := $(PROGRAM)-$(VERSION)-linux-arm64-v8.0
+PACKAGE_DARWIN_AMD64_V1 := $(PROGRAM)-$(VERSION)-darwin-amd64-v1
+PACKAGE_DARWIN_AMD64_V2 := $(PROGRAM)-$(VERSION)-darwin-amd64-v2
+PACKAGE_DARWIN_AMD64_V3 := $(PROGRAM)-$(VERSION)-darwin-amd64-v3
+PACKAGE_DARWIN_ARM64_V8 := $(PROGRAM)-$(VERSION)-darwin-arm64-v8.0
+
+prefix ?= /usr/local
+
+bindir ?= $(prefix)/bin
+
 export GOWORK := off
 
 # Public goals
 
 .PHONY: fix
-fix: go_fix gofmt_fix goimports_fix go_mod_fix prettier_fix trimmer_fix
+fix: go_fix goimports_fix gofmt_fix go_mod_fix prettier_fix trimmer_fix
 
 .PHONY: check
-check: doctor lint analyze test fuzz audit
+check: doctor lint analyze test coverage fuzz dist audit
 
 .PHONY: doctor
 doctor: git_check npm_config_check npm_doctor
@@ -45,10 +79,10 @@ doctor: git_check npm_config_check npm_doctor
 lint: gofmt_check goimports_check prettier_check trimmer_check
 
 .PHONY: analyze
-analyze: npm_check go_mod_check go_list_check go_fix_check go_build_check go_vet_check shadow_check
+analyze: npm_check go_mod_check go_list_check go_fix_check go_vet_check shadow_check
 
 .PHONY: test
-test: go_test asan_check msan_check
+test: go_test
 
 .PHONY: coverage
 coverage: go_coverage
@@ -57,17 +91,36 @@ coverage: go_coverage
 audit: npm_audit go_audit
 
 .PHONY: update
-update: npm_config_check ./package.json ./package-lock.json ./go.mod ./go.sum npm_update go_mod_update
+update: npm_config_check ./package.json ./package-lock.json ./go.mod ./go.sum npm_update go_update
 
 .PHONY: clean
 clean:
-	rm -rf ./build
+	rm --force --recursive --one-file-system -- ./build ./dist
 
 .PHONY: distclean
 distclean: clean deps_clean
 
-.PHONY: build
-build: go_build
+.PHONY: all
+all: go_build
+
+.PHONY: installdirs
+installdirs:
+	install --directory --mode=0755 -- "$(DESTDIR)$(bindir)"
+
+.PHONY: install
+install: go_build_native installdirs
+	install --mode=0755 -- "./build/bin/native/$(PROGRAM)" "$(DESTDIR)$(bindir)/$(PROGRAM)"
+
+.PHONY: uninstall
+uninstall:
+	rm --force -- "$(DESTDIR)$(bindir)/$(PROGRAM)"
+
+.PHONY: installcheck
+installcheck:
+	test "$$("$(DESTDIR)$(bindir)/$(PROGRAM)" first second)" = "$$(printf 'first\nsecond')"
+
+.PHONY: dist
+dist: dist_metadata_check all go_dist
 
 .PHONY: benchmark
 benchmark: go_benchmark
@@ -103,8 +156,13 @@ rebuild: devcontainer_check down
 
 # Protected goals
 
+.PHONY: dist_metadata_check
+dist_metadata_check:
+	if [[ ! "$${SOURCE_DATE_EPOCH}" =~ ^[0-9]+$$ ]]; then printf '%s\n' 'SOURCE_DATE_EPOCH must contain only decimal digits' >&2; exit 1; fi
+	if [[ ! "$${VERSION}" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$$ ]]; then printf '%s\n' 'VERSION contains unsupported characters' >&2; exit 1; fi
+
 .PHONY: deps_install
-deps_install: npm_install
+deps_install: npm_install go_mod_download
 
 .PHONY: deps_clean
 deps_clean: npm_clean
@@ -147,7 +205,7 @@ npm_check: npm_config_check ./node_modules/.package-lock.json
 
 .PHONY: npm_audit
 npm_audit: npm_config_check ./node_modules/.package-lock.json ./package.json ./package-lock.json
-	npm audit --ignore-scripts --audit-level=high --install-links --include=prod --include=dev --include=peer --include=optional
+	npm audit --ignore-scripts --audit-level=moderate --install-links --include=prod --include=dev --include=peer --include=optional
 
 .PHONY: npm_install
 npm_install: npm_config_check ./package.json ./package-lock.json
@@ -159,11 +217,17 @@ npm_update: npm_config_check ./package.json ./package-lock.json npm_clean
 
 .PHONY: npm_clean
 npm_clean:
-	rm -rf ./node_modules
+	rm --force --recursive --one-file-system -- ./node_modules
 
-.PHONY: go_mod_update
-go_mod_update: ./go.mod ./go.sum
-	go get -u all
+.PHONY: go_mod_download
+go_mod_download: ./go.mod ./go.sum
+	go mod download
+	go mod verify
+
+.PHONY: go_update
+go_update: ./go.mod ./go.sum
+	go get -u -t ./...
+	go get tool
 	go mod tidy
 
 .PHONY: go_fix
@@ -202,67 +266,102 @@ go_list_check:
 go_fix_check:
 	go fix -diff ./...
 
-.PHONY: go_build_check
-go_build_check:
-	go build -mod=readonly -trimpath -buildvcs=true -buildmode=pie -pgo=auto ./...
-
 .PHONY: go_vet_check
 go_vet_check:
 	go vet -mod=readonly ./...
 
 .PHONY: shadow_check
 shadow_check:
-	go tool shadow -strict ./...
+	go tool shadow ./...
 
 .PHONY: go_test
 go_test:
-	go test -mod=readonly -v -race -count=2 -shuffle=on -vet=all -cpu=1,2,4,8 -timeout=2m -fullpath ./...
+	go test -mod=readonly -race -count=1 -shuffle=on -cpu=1,2,4,8 -timeout=2m -fullpath ./...
 
 .PHONY: go_coverage
 go_coverage:
-	rm -rf ./build/coverage
-	mkdir -p ./build/coverage/html
-	go test -mod=readonly -v -count=1 -vet=all -timeout=2m -fullpath -covermode=atomic -coverpkg=./... -coverprofile=./build/coverage/coverage.out ./...
+	rm --force --recursive --one-file-system -- ./build/coverage
+	mkdir --parents -- ./build/coverage/html
+	go test -mod=readonly -count=1 -timeout=2m -fullpath -covermode=atomic -coverpkg=./internal/... -coverprofile=./build/coverage/coverage.out ./internal/...
 	go tool cover -func=./build/coverage/coverage.out
 	go tool cover -html=./build/coverage/coverage.out -o ./build/coverage/html/index.html
+	go tool cover -func=./build/coverage/coverage.out | awk -v minimum="$(COVERAGE_MIN)" '/^total:/ { coverage = $$3; sub(/%$$/, "", coverage); found = 1 } END { exit !found || coverage + 0 < minimum + 0 }'
 
 .PHONY: go_benchmark
 go_benchmark:
-	go test -mod=readonly -run=^$$ -bench=. -benchmem -count=5 -benchtime=1s ./...
+	go test -mod=readonly -run='^$$' -bench='.' -benchmem -count=5 -benchtime=1s ./...
 
 .PHONY: go_fuzz
 go_fuzz:
-	go test -mod=readonly -run=^$$ -fuzz=FuzzMessage -fuzztime=10s ./internal/app
+	go test -mod=readonly -run='^$$' -fuzz='^FuzzRun$$' -fuzztime=10s ./internal/app
 
 .PHONY: go_profile
 go_profile:
-	mkdir -p ./build/profiles
-	go test -mod=readonly -run=^$$ -bench=. -benchmem -count=1 -benchtime=1s -o ./build/profiles/profile.test -cpuprofile=./build/profiles/cpu.pprof -memprofile=./build/profiles/mem.pprof -blockprofile=./build/profiles/block.pprof -mutexprofile=./build/profiles/mutex.pprof ./internal/app
+	rm --force --recursive --one-file-system -- ./build/profiles
+	mkdir --parents -- ./build/profiles/BenchmarkRun
+	go test -mod=readonly -run='^$$' -bench='^BenchmarkRun$$' -benchmem -count=1 -benchtime=1s -o ./build/profiles/BenchmarkRun/profile.test -cpuprofile=./build/profiles/BenchmarkRun/cpu.pprof -memprofile=./build/profiles/BenchmarkRun/mem.pprof -blockprofile=./build/profiles/BenchmarkRun/block.pprof -mutexprofile=./build/profiles/BenchmarkRun/mutex.pprof ./internal/app
 
 .PHONY: go_audit
-go_audit: go_build
+go_audit: all
 	go mod verify
-	go tool govulncheck -scan=module -test -show=version -C ./cmd/template-golang
-	go tool govulncheck -scan=package -test -show=version ./...
 	go tool govulncheck -scan=symbol -test -show=version ./...
-	go tool govulncheck -mode=binary -show=version ./build/template-golang
-
-.PHONY: asan_check
-asan_check:
-	CGO_ENABLED=1 go test -mod=readonly -asan -count=1 -run=. ./...
-
-.PHONY: msan_check
-msan_check:
-	CGO_ENABLED=1 CC=clang go test -mod=readonly -msan -count=1 -run=. ./...
+	go tool govulncheck -mode=binary -show=version ./build/bin/linux-amd64-v1/$(PROGRAM)
+	go tool govulncheck -mode=binary -show=version ./build/bin/linux-amd64-v2/$(PROGRAM)
+	go tool govulncheck -mode=binary -show=version ./build/bin/linux-amd64-v3/$(PROGRAM)
+	go tool govulncheck -mode=binary -show=version ./build/bin/linux-arm64-v8.0/$(PROGRAM)
+	go tool govulncheck -mode=binary -show=version ./build/bin/darwin-amd64-v1/$(PROGRAM)
+	go tool govulncheck -mode=binary -show=version ./build/bin/darwin-amd64-v2/$(PROGRAM)
+	go tool govulncheck -mode=binary -show=version ./build/bin/darwin-amd64-v3/$(PROGRAM)
+	go tool govulncheck -mode=binary -show=version ./build/bin/darwin-arm64-v8.0/$(PROGRAM)
 
 .PHONY: go_build
 go_build:
-	mkdir -p ./build
-	CGO_ENABLED=0 go build -mod=readonly -trimpath -buildvcs=true -buildmode=pie -pgo=auto -o ./build/template-golang ./cmd/template-golang
+	rm --force --recursive --one-file-system -- ./build/bin
+	mkdir --parents -- ./build/bin/linux-amd64-v1 ./build/bin/linux-amd64-v2 ./build/bin/linux-amd64-v3 ./build/bin/linux-arm64-v8.0 ./build/bin/darwin-amd64-v1 ./build/bin/darwin-amd64-v2 ./build/bin/darwin-amd64-v3 ./build/bin/darwin-arm64-v8.0
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v1 go build -mod=readonly -trimpath -buildvcs=true -buildmode=pie -o ./build/bin/linux-amd64-v1/$(PROGRAM) ./cmd/$(PROGRAM)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v2 go build -mod=readonly -trimpath -buildvcs=true -buildmode=pie -o ./build/bin/linux-amd64-v2/$(PROGRAM) ./cmd/$(PROGRAM)
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 GOAMD64=v3 go build -mod=readonly -trimpath -buildvcs=true -buildmode=pie -o ./build/bin/linux-amd64-v3/$(PROGRAM) ./cmd/$(PROGRAM)
+	CGO_ENABLED=0 GOOS=linux GOARCH=arm64 GOARM64=v8.0 go build -mod=readonly -trimpath -buildvcs=true -buildmode=pie -o ./build/bin/linux-arm64-v8.0/$(PROGRAM) ./cmd/$(PROGRAM)
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 GOAMD64=v1 go build -mod=readonly -trimpath -buildvcs=true -buildmode=pie -o ./build/bin/darwin-amd64-v1/$(PROGRAM) ./cmd/$(PROGRAM)
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 GOAMD64=v2 go build -mod=readonly -trimpath -buildvcs=true -buildmode=pie -o ./build/bin/darwin-amd64-v2/$(PROGRAM) ./cmd/$(PROGRAM)
+	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 GOAMD64=v3 go build -mod=readonly -trimpath -buildvcs=true -buildmode=pie -o ./build/bin/darwin-amd64-v3/$(PROGRAM) ./cmd/$(PROGRAM)
+	CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 GOARM64=v8.0 go build -mod=readonly -trimpath -buildvcs=true -buildmode=pie -o ./build/bin/darwin-arm64-v8.0/$(PROGRAM) ./cmd/$(PROGRAM)
 
-.PHONY: coverage_serve
-coverage_serve: go_coverage
-	node --eval 'const fs = require("node:fs"); const http = require("node:http"); http.createServer((_request, response) => { response.setHeader("Content-Type", "text/html; charset=utf-8"); fs.createReadStream("./build/coverage/html/index.html").pipe(response); }).listen(61031, "0.0.0.0", () => console.log("Coverage report: http://localhost:61031"));'
+.PHONY: go_build_native
+go_build_native:
+	rm --force --recursive --one-file-system -- ./build/bin/native
+	mkdir --parents -- ./build/bin/native
+	CGO_ENABLED=0 go build -mod=readonly -trimpath -buildvcs=true -buildmode=pie -o ./build/bin/native/$(PROGRAM) ./cmd/$(PROGRAM)
+
+.PHONY: go_dist
+go_dist: dist_metadata_check
+	rm --force --recursive --one-file-system -- ./build/package ./dist
+	install --directory --mode=0755 -- "./build/package/$(PACKAGE_LINUX_AMD64_V1)" "./build/package/$(PACKAGE_LINUX_AMD64_V1)/bin" "./build/package/$(PACKAGE_LINUX_AMD64_V2)" "./build/package/$(PACKAGE_LINUX_AMD64_V2)/bin" "./build/package/$(PACKAGE_LINUX_AMD64_V3)" "./build/package/$(PACKAGE_LINUX_AMD64_V3)/bin" "./build/package/$(PACKAGE_LINUX_ARM64_V8)" "./build/package/$(PACKAGE_LINUX_ARM64_V8)/bin" "./build/package/$(PACKAGE_DARWIN_AMD64_V1)" "./build/package/$(PACKAGE_DARWIN_AMD64_V1)/bin" "./build/package/$(PACKAGE_DARWIN_AMD64_V2)" "./build/package/$(PACKAGE_DARWIN_AMD64_V2)/bin" "./build/package/$(PACKAGE_DARWIN_AMD64_V3)" "./build/package/$(PACKAGE_DARWIN_AMD64_V3)/bin" "./build/package/$(PACKAGE_DARWIN_ARM64_V8)" "./build/package/$(PACKAGE_DARWIN_ARM64_V8)/bin" ./dist
+	install --mode=0755 -- ./build/bin/linux-amd64-v1/$(PROGRAM) "./build/package/$(PACKAGE_LINUX_AMD64_V1)/bin/$(PROGRAM)"
+	install --mode=0755 -- ./build/bin/linux-amd64-v2/$(PROGRAM) "./build/package/$(PACKAGE_LINUX_AMD64_V2)/bin/$(PROGRAM)"
+	install --mode=0755 -- ./build/bin/linux-amd64-v3/$(PROGRAM) "./build/package/$(PACKAGE_LINUX_AMD64_V3)/bin/$(PROGRAM)"
+	install --mode=0755 -- ./build/bin/linux-arm64-v8.0/$(PROGRAM) "./build/package/$(PACKAGE_LINUX_ARM64_V8)/bin/$(PROGRAM)"
+	install --mode=0755 -- ./build/bin/darwin-amd64-v1/$(PROGRAM) "./build/package/$(PACKAGE_DARWIN_AMD64_V1)/bin/$(PROGRAM)"
+	install --mode=0755 -- ./build/bin/darwin-amd64-v2/$(PROGRAM) "./build/package/$(PACKAGE_DARWIN_AMD64_V2)/bin/$(PROGRAM)"
+	install --mode=0755 -- ./build/bin/darwin-amd64-v3/$(PROGRAM) "./build/package/$(PACKAGE_DARWIN_AMD64_V3)/bin/$(PROGRAM)"
+	install --mode=0755 -- ./build/bin/darwin-arm64-v8.0/$(PROGRAM) "./build/package/$(PACKAGE_DARWIN_ARM64_V8)/bin/$(PROGRAM)"
+	install --mode=0644 -- ./LICENSE "./build/package/$(PACKAGE_LINUX_AMD64_V1)/LICENSE"
+	install --mode=0644 -- ./LICENSE "./build/package/$(PACKAGE_LINUX_AMD64_V2)/LICENSE"
+	install --mode=0644 -- ./LICENSE "./build/package/$(PACKAGE_LINUX_AMD64_V3)/LICENSE"
+	install --mode=0644 -- ./LICENSE "./build/package/$(PACKAGE_LINUX_ARM64_V8)/LICENSE"
+	install --mode=0644 -- ./LICENSE "./build/package/$(PACKAGE_DARWIN_AMD64_V1)/LICENSE"
+	install --mode=0644 -- ./LICENSE "./build/package/$(PACKAGE_DARWIN_AMD64_V2)/LICENSE"
+	install --mode=0644 -- ./LICENSE "./build/package/$(PACKAGE_DARWIN_AMD64_V3)/LICENSE"
+	install --mode=0644 -- ./LICENSE "./build/package/$(PACKAGE_DARWIN_ARM64_V8)/LICENSE"
+	tar --sort=name --mtime="@$(SOURCE_DATE_EPOCH)" --owner=0 --group=0 --numeric-owner --create --gzip --file="./dist/$(PACKAGE_LINUX_AMD64_V1).tar.gz" --directory=./build/package -- "$(PACKAGE_LINUX_AMD64_V1)"
+	tar --sort=name --mtime="@$(SOURCE_DATE_EPOCH)" --owner=0 --group=0 --numeric-owner --create --gzip --file="./dist/$(PACKAGE_LINUX_AMD64_V2).tar.gz" --directory=./build/package -- "$(PACKAGE_LINUX_AMD64_V2)"
+	tar --sort=name --mtime="@$(SOURCE_DATE_EPOCH)" --owner=0 --group=0 --numeric-owner --create --gzip --file="./dist/$(PACKAGE_LINUX_AMD64_V3).tar.gz" --directory=./build/package -- "$(PACKAGE_LINUX_AMD64_V3)"
+	tar --sort=name --mtime="@$(SOURCE_DATE_EPOCH)" --owner=0 --group=0 --numeric-owner --create --gzip --file="./dist/$(PACKAGE_LINUX_ARM64_V8).tar.gz" --directory=./build/package -- "$(PACKAGE_LINUX_ARM64_V8)"
+	tar --sort=name --mtime="@$(SOURCE_DATE_EPOCH)" --owner=0 --group=0 --numeric-owner --create --gzip --file="./dist/$(PACKAGE_DARWIN_AMD64_V1).tar.gz" --directory=./build/package -- "$(PACKAGE_DARWIN_AMD64_V1)"
+	tar --sort=name --mtime="@$(SOURCE_DATE_EPOCH)" --owner=0 --group=0 --numeric-owner --create --gzip --file="./dist/$(PACKAGE_DARWIN_AMD64_V2).tar.gz" --directory=./build/package -- "$(PACKAGE_DARWIN_AMD64_V2)"
+	tar --sort=name --mtime="@$(SOURCE_DATE_EPOCH)" --owner=0 --group=0 --numeric-owner --create --gzip --file="./dist/$(PACKAGE_DARWIN_AMD64_V3).tar.gz" --directory=./build/package -- "$(PACKAGE_DARWIN_AMD64_V3)"
+	tar --sort=name --mtime="@$(SOURCE_DATE_EPOCH)" --owner=0 --group=0 --numeric-owner --create --gzip --file="./dist/$(PACKAGE_DARWIN_ARM64_V8).tar.gz" --directory=./build/package -- "$(PACKAGE_DARWIN_ARM64_V8)"
+	cd ./dist && sha256sum -- "$(PACKAGE_LINUX_AMD64_V1).tar.gz" "$(PACKAGE_LINUX_AMD64_V2).tar.gz" "$(PACKAGE_LINUX_AMD64_V3).tar.gz" "$(PACKAGE_LINUX_ARM64_V8).tar.gz" "$(PACKAGE_DARWIN_AMD64_V1).tar.gz" "$(PACKAGE_DARWIN_AMD64_V2).tar.gz" "$(PACKAGE_DARWIN_AMD64_V3).tar.gz" "$(PACKAGE_DARWIN_ARM64_V8).tar.gz" > ./SHA256SUMS
 
 .PHONY: git_check
 git_check:

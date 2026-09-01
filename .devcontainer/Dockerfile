@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1@sha256:87999aa3d42bdc6bea60565083ee17e86d1f3339802f543c0d03998580f9cb89
 
 FROM docker.io/library/node:24-trixie@sha256:ef91212c27702eab90248892b1ac837ba3e903f78385770bd11f7c460e28eaf7 AS versionednode
-FROM docker.io/library/golang:1.26.5-trixie@sha256:4ee9ffa999b4583ce281939cdff828763083610292f252279a0cee77473bd9a7
+FROM docker.io/library/golang:1.27.0-trixie@sha256:6212da3924947f4b6a939df02ea627c13f338f1a41d6c3fcb0dd9d076eef46c4
 
 COPY --from=versionednode /usr/local/bin/node /usr/local/bin/node
 COPY --from=versionednode /usr/local/include/node /usr/local/include/node

@@ -1,6 +1,6 @@
 module github.com/tomaschochola/template-golang/v2
 
-go 1.26.5
+go 1.27.0
 
 tool (
 	golang.org/x/tools/cmd/goimports
@@ -9,10 +9,10 @@ tool (
 )
 
 require (
-	golang.org/x/mod v0.39.0 // indirect
+	golang.org/x/mod v0.40.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/telemetry v0.0.0-20260811182544-a038080d80e5 // indirect
-	golang.org/x/tools v0.48.0 // indirect
-	golang.org/x/vuln v1.6.0 // indirect
+	golang.org/x/telemetry v0.0.0-20260820143203-7221e139e8d6 // indirect
+	golang.org/x/tools v0.49.0 // indirect
+	golang.org/x/vuln v1.7.0 // indirect
 )
