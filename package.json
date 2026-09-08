@@ -17,8 +17,8 @@
     ],
     "description": "Go application template with testing, static analysis, and vulnerability checks.",
     "devDependencies": {
-        "@tomaschochola/tooling-prettier": "github:tomaschochola/tooling-prettier#main",
-        "@tomaschochola/tooling-trimmer": "github:tomaschochola/tooling-trimmer#main"
+        "@tomaschochola/tooling-prettier": "git+https://github.com/tomaschochola/tooling-prettier.git#main",
+        "@tomaschochola/tooling-trimmer": "git+https://github.com/tomaschochola/tooling-trimmer.git#main"
     },
     "funding": {
         "type": "github",

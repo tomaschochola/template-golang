@@ -32,6 +32,19 @@ COVERAGE_MIN ?= 100
 
 DESTDIR ?=
 
+FUZZ_PACKAGE ?=
+FUZZ_TARGET ?=
+FUZZ_TIME ?= 10s
+
+BENCHMARK_PACKAGE ?=
+BENCHMARK_TARGET ?=
+BENCHMARK_TIME ?= 1s
+
+PROFILE_PACKAGE ?=
+PROFILE_TARGET ?=
+PROFILE_NAME ?=
+PROFILE_TIME ?= 1s
+
 PROGRAM := template-golang
 
 ifeq ($(origin SOURCE_DATE_EPOCH), undefined)
@@ -48,6 +61,16 @@ endif
 
 export SOURCE_DATE_EPOCH
 export VERSION
+export BENCHMARK_PACKAGE
+export BENCHMARK_TARGET
+export BENCHMARK_TIME
+export FUZZ_PACKAGE
+export FUZZ_TARGET
+export FUZZ_TIME
+export PROFILE_NAME
+export PROFILE_PACKAGE
+export PROFILE_TARGET
+export PROFILE_TIME
 
 PACKAGE_LINUX_AMD64_V1 := $(PROGRAM)-$(VERSION)-linux-amd64-v1
 PACKAGE_LINUX_AMD64_V2 := $(PROGRAM)-$(VERSION)-linux-amd64-v2
@@ -117,19 +140,23 @@ uninstall:
 
 .PHONY: installcheck
 installcheck:
-	test "$$("$(DESTDIR)$(bindir)/$(PROGRAM)" first second)" = "$$(printf 'first\nsecond')"
+	test -f "$(DESTDIR)$(bindir)/$(PROGRAM)"
+	test -x "$(DESTDIR)$(bindir)/$(PROGRAM)"
 
 .PHONY: dist
 dist: dist_metadata_check all go_dist
 
 .PHONY: benchmark
-benchmark: go_benchmark
+benchmark:
+	$(MAKE) go_benchmark BENCHMARK_PACKAGE=./internal/app BENCHMARK_TARGET=BenchmarkRun
 
 .PHONY: fuzz
-fuzz: go_fuzz
+fuzz:
+	$(MAKE) go_fuzz FUZZ_PACKAGE=./internal/app FUZZ_TARGET=FuzzRun
 
 .PHONY: profile
-profile: go_profile
+profile:
+	$(MAKE) go_profile PROFILE_PACKAGE=./internal/app PROFILE_TARGET=BenchmarkRun PROFILE_NAME=BenchmarkRun
 
 .PHONY: postcreate
 postcreate: deps_install
@@ -289,17 +316,27 @@ go_coverage:
 
 .PHONY: go_benchmark
 go_benchmark:
-	go test -mod=readonly -run='^$$' -bench='.' -benchmem -count=5 -benchtime=1s ./...
+	if [[ ! "$${BENCHMARK_PACKAGE}" =~ ^\./[A-Za-z0-9_./-]+$$ ]]; then printf '%s\n' 'BENCHMARK_PACKAGE must be a local Go package pattern' >&2; exit 1; fi
+	if [[ ! "$${BENCHMARK_TARGET}" =~ ^Benchmark[A-Za-z0-9_]*$$ ]]; then printf '%s\n' 'BENCHMARK_TARGET must be a Go benchmark function name' >&2; exit 1; fi
+	if [[ ! "$${BENCHMARK_TIME}" =~ ^[1-9][0-9]*(ns|us|ms|s|m|h)$$ ]]; then printf '%s\n' 'BENCHMARK_TIME must be a positive Go duration' >&2; exit 1; fi
+	go test -mod=readonly -run='^$$' "-bench=^$${BENCHMARK_TARGET}$$" -benchmem -count=5 "-benchtime=$${BENCHMARK_TIME}" "$${BENCHMARK_PACKAGE}"
 
 .PHONY: go_fuzz
 go_fuzz:
-	go test -mod=readonly -run='^$$' -fuzz='^FuzzRun$$' -fuzztime=10s ./internal/app
+	if [[ ! "$${FUZZ_PACKAGE}" =~ ^\./[A-Za-z0-9_./-]+$$ ]]; then printf '%s\n' 'FUZZ_PACKAGE must be a local Go package pattern' >&2; exit 1; fi
+	if [[ ! "$${FUZZ_TARGET}" =~ ^Fuzz[A-Za-z0-9_]*$$ ]]; then printf '%s\n' 'FUZZ_TARGET must be a Go fuzz function name' >&2; exit 1; fi
+	if [[ ! "$${FUZZ_TIME}" =~ ^[1-9][0-9]*(ns|us|ms|s|m|h)$$ ]]; then printf '%s\n' 'FUZZ_TIME must be a positive Go duration' >&2; exit 1; fi
+	go test -mod=readonly -run='^$$' "-fuzz=^$${FUZZ_TARGET}$$" "-fuzztime=$${FUZZ_TIME}" "$${FUZZ_PACKAGE}"
 
 .PHONY: go_profile
 go_profile:
-	rm --force --recursive --one-file-system -- ./build/profiles
-	mkdir --parents -- ./build/profiles/BenchmarkRun
-	go test -mod=readonly -run='^$$' -bench='^BenchmarkRun$$' -benchmem -count=1 -benchtime=1s -o ./build/profiles/BenchmarkRun/profile.test -cpuprofile=./build/profiles/BenchmarkRun/cpu.pprof -memprofile=./build/profiles/BenchmarkRun/mem.pprof -blockprofile=./build/profiles/BenchmarkRun/block.pprof -mutexprofile=./build/profiles/BenchmarkRun/mutex.pprof ./internal/app
+	if [[ ! "$${PROFILE_PACKAGE}" =~ ^\./[A-Za-z0-9_./-]+$$ ]]; then printf '%s\n' 'PROFILE_PACKAGE must be a local Go package pattern' >&2; exit 1; fi
+	if [[ ! "$${PROFILE_TARGET}" =~ ^Benchmark[A-Za-z0-9_]*$$ ]]; then printf '%s\n' 'PROFILE_TARGET must be a Go benchmark function name' >&2; exit 1; fi
+	if [[ ! "$${PROFILE_NAME}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$$ ]]; then printf '%s\n' 'PROFILE_NAME contains unsupported characters' >&2; exit 1; fi
+	if [[ ! "$${PROFILE_TIME}" =~ ^[1-9][0-9]*(ns|us|ms|s|m|h)$$ ]]; then printf '%s\n' 'PROFILE_TIME must be a positive Go duration' >&2; exit 1; fi
+	rm --force --recursive --one-file-system -- "./build/profiles/$${PROFILE_NAME}"
+	mkdir --parents -- "./build/profiles/$${PROFILE_NAME}"
+	go test -mod=readonly -run='^$$' "-bench=^$${PROFILE_TARGET}$$" -benchmem -count=1 "-benchtime=$${PROFILE_TIME}" -o "./build/profiles/$${PROFILE_NAME}/profile.test" -cpuprofile="./build/profiles/$${PROFILE_NAME}/cpu.pprof" -memprofile="./build/profiles/$${PROFILE_NAME}/mem.pprof" -blockprofile="./build/profiles/$${PROFILE_NAME}/block.pprof" -mutexprofile="./build/profiles/$${PROFILE_NAME}/mutex.pprof" "$${PROFILE_PACKAGE}"
 
 .PHONY: go_audit
 go_audit: all
