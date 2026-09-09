@@ -1,6 +1,6 @@
 module github.com/tomaschochola/template-golang/v2
 
-go 1.27.0
+go 1.27.1
 
 tool (
 	golang.org/x/tools/cmd/goimports
