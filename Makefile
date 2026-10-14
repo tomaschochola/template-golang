@@ -26,24 +26,11 @@ never:
 
 # Options
 
-DEVCONTAINER_FILTER := label=devcontainer.local_folder=$(CURDIR)
+DEVCONTAINER_COMPOSE := ./.devcontainer/docker-compose.yml
 
-COVERAGE_MIN ?= 100
+LC_ALL ?= C.UTF-8
 
 DESTDIR ?=
-
-FUZZ_PACKAGE ?=
-FUZZ_TARGET ?=
-FUZZ_TIME ?= 10s
-
-BENCHMARK_PACKAGE ?=
-BENCHMARK_TARGET ?=
-BENCHMARK_TIME ?= 1s
-
-PROFILE_PACKAGE ?=
-PROFILE_TARGET ?=
-PROFILE_NAME ?=
-PROFILE_TIME ?= 1s
 
 PROGRAM := template-golang
 
@@ -59,19 +46,6 @@ else
 override VERSION := $(value VERSION)
 endif
 
-export SOURCE_DATE_EPOCH
-export VERSION
-export BENCHMARK_PACKAGE
-export BENCHMARK_TARGET
-export BENCHMARK_TIME
-export FUZZ_PACKAGE
-export FUZZ_TARGET
-export FUZZ_TIME
-export PROFILE_NAME
-export PROFILE_PACKAGE
-export PROFILE_TARGET
-export PROFILE_TIME
-
 PACKAGE_LINUX_AMD64_V1 := $(PROGRAM)-$(VERSION)-linux-amd64-v1
 PACKAGE_LINUX_AMD64_V2 := $(PROGRAM)-$(VERSION)-linux-amd64-v2
 PACKAGE_LINUX_AMD64_V3 := $(PROGRAM)-$(VERSION)-linux-amd64-v3
@@ -85,7 +59,12 @@ prefix ?= /usr/local
 
 bindir ?= $(prefix)/bin
 
-export GOWORK := off
+GOWORK := off
+
+export LC_ALL
+export SOURCE_DATE_EPOCH
+export VERSION
+export GOWORK
 
 # Public goals
 
@@ -93,10 +72,10 @@ export GOWORK := off
 fix: go_fix goimports_fix gofmt_fix go_mod_fix prettier_fix trimmer_fix
 
 .PHONY: check
-check: doctor lint analyze test coverage fuzz dist audit
+check: doctor lint analyze test coverage dist audit
 
 .PHONY: doctor
-doctor: git_check npm_config_check npm_doctor
+doctor: git_check npm_config_check npm_doctor npm_check go_toolchain_check
 
 .PHONY: lint
 lint: gofmt_check goimports_check prettier_check trimmer_check
@@ -146,17 +125,11 @@ installcheck:
 .PHONY: dist
 dist: dist_metadata_check all go_dist
 
-.PHONY: benchmark
-benchmark:
-	$(MAKE) go_benchmark BENCHMARK_PACKAGE=./internal/app BENCHMARK_TARGET=BenchmarkRun
-
-.PHONY: fuzz
-fuzz:
-	$(MAKE) go_fuzz FUZZ_PACKAGE=./internal/app FUZZ_TARGET=FuzzRun
-
-.PHONY: profile
-profile:
-	$(MAKE) go_profile PROFILE_PACKAGE=./internal/app PROFILE_TARGET=BenchmarkRun PROFILE_NAME=BenchmarkRun
+.PHONY: dist-install
+dist-install: dist
+	cd ./dist && sha256sum --check SHA256SUMS
+	$(MAKE) install
+	$(MAKE) installcheck
 
 .PHONY: postcreate
 postcreate: deps_install
@@ -171,11 +144,11 @@ shell: up
 
 .PHONY: stop
 stop:
-	docker container ls --quiet --filter "$(DEVCONTAINER_FILTER)" | while IFS= read -r container; do docker container stop "$$container"; done
+	docker compose -f "$(DEVCONTAINER_COMPOSE)" stop
 
 .PHONY: down
-down: stop
-	docker container ls --all --quiet --filter "$(DEVCONTAINER_FILTER)" | while IFS= read -r container; do docker container rm "$$container"; done
+down:
+	docker compose -f "$(DEVCONTAINER_COMPOSE)" down --remove-orphans
 
 .PHONY: rebuild
 rebuild: devcontainer_check down
@@ -273,6 +246,11 @@ gofmt_fix:
 goimports_fix:
 	go tool goimports -e -local "$$(go list -m)" -w .
 
+.PHONY: go_toolchain_check
+go_toolchain_check: ./go.mod
+	test "$$(go env GOVERSION | cut --delimiter='-' --fields=1)" = "go1.27.1"
+	test "$$(go env GOHOSTOS)" = "linux"
+
 .PHONY: go_mod_check
 go_mod_check:
 	go mod tidy -diff
@@ -312,31 +290,6 @@ go_coverage:
 	go test -mod=readonly -count=1 -timeout=2m -fullpath -covermode=atomic -coverpkg=./internal/... -coverprofile=./build/coverage/coverage.out ./internal/...
 	go tool cover -func=./build/coverage/coverage.out
 	go tool cover -html=./build/coverage/coverage.out -o ./build/coverage/html/index.html
-	go tool cover -func=./build/coverage/coverage.out | awk -v minimum="$(COVERAGE_MIN)" '/^total:/ { coverage = $$3; sub(/%$$/, "", coverage); found = 1 } END { exit !found || coverage + 0 < minimum + 0 }'
-
-.PHONY: go_benchmark
-go_benchmark:
-	if [[ ! "$${BENCHMARK_PACKAGE}" =~ ^\./[A-Za-z0-9_./-]+$$ ]]; then printf '%s\n' 'BENCHMARK_PACKAGE must be a local Go package pattern' >&2; exit 1; fi
-	if [[ ! "$${BENCHMARK_TARGET}" =~ ^Benchmark[A-Za-z0-9_]*$$ ]]; then printf '%s\n' 'BENCHMARK_TARGET must be a Go benchmark function name' >&2; exit 1; fi
-	if [[ ! "$${BENCHMARK_TIME}" =~ ^[1-9][0-9]*(ns|us|ms|s|m|h)$$ ]]; then printf '%s\n' 'BENCHMARK_TIME must be a positive Go duration' >&2; exit 1; fi
-	go test -mod=readonly -run='^$$' "-bench=^$${BENCHMARK_TARGET}$$" -benchmem -count=5 "-benchtime=$${BENCHMARK_TIME}" "$${BENCHMARK_PACKAGE}"
-
-.PHONY: go_fuzz
-go_fuzz:
-	if [[ ! "$${FUZZ_PACKAGE}" =~ ^\./[A-Za-z0-9_./-]+$$ ]]; then printf '%s\n' 'FUZZ_PACKAGE must be a local Go package pattern' >&2; exit 1; fi
-	if [[ ! "$${FUZZ_TARGET}" =~ ^Fuzz[A-Za-z0-9_]*$$ ]]; then printf '%s\n' 'FUZZ_TARGET must be a Go fuzz function name' >&2; exit 1; fi
-	if [[ ! "$${FUZZ_TIME}" =~ ^[1-9][0-9]*(ns|us|ms|s|m|h)$$ ]]; then printf '%s\n' 'FUZZ_TIME must be a positive Go duration' >&2; exit 1; fi
-	go test -mod=readonly -run='^$$' "-fuzz=^$${FUZZ_TARGET}$$" "-fuzztime=$${FUZZ_TIME}" "$${FUZZ_PACKAGE}"
-
-.PHONY: go_profile
-go_profile:
-	if [[ ! "$${PROFILE_PACKAGE}" =~ ^\./[A-Za-z0-9_./-]+$$ ]]; then printf '%s\n' 'PROFILE_PACKAGE must be a local Go package pattern' >&2; exit 1; fi
-	if [[ ! "$${PROFILE_TARGET}" =~ ^Benchmark[A-Za-z0-9_]*$$ ]]; then printf '%s\n' 'PROFILE_TARGET must be a Go benchmark function name' >&2; exit 1; fi
-	if [[ ! "$${PROFILE_NAME}" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$$ ]]; then printf '%s\n' 'PROFILE_NAME contains unsupported characters' >&2; exit 1; fi
-	if [[ ! "$${PROFILE_TIME}" =~ ^[1-9][0-9]*(ns|us|ms|s|m|h)$$ ]]; then printf '%s\n' 'PROFILE_TIME must be a positive Go duration' >&2; exit 1; fi
-	rm --force --recursive --one-file-system -- "./build/profiles/$${PROFILE_NAME}"
-	mkdir --parents -- "./build/profiles/$${PROFILE_NAME}"
-	go test -mod=readonly -run='^$$' "-bench=^$${PROFILE_TARGET}$$" -benchmem -count=1 "-benchtime=$${PROFILE_TIME}" -o "./build/profiles/$${PROFILE_NAME}/profile.test" -cpuprofile="./build/profiles/$${PROFILE_NAME}/cpu.pprof" -memprofile="./build/profiles/$${PROFILE_NAME}/mem.pprof" -blockprofile="./build/profiles/$${PROFILE_NAME}/block.pprof" -mutexprofile="./build/profiles/$${PROFILE_NAME}/mutex.pprof" "$${PROFILE_PACKAGE}"
 
 .PHONY: go_audit
 go_audit: all
@@ -411,6 +364,7 @@ git_check:
 .PHONY: devcontainer_check
 devcontainer_check:
 	devcontainer read-configuration --workspace-folder . >/dev/null
+	docker compose -f "$(DEVCONTAINER_COMPOSE)" config --quiet
 	docker build --check --file ./.devcontainer/Dockerfile ./.devcontainer
 
 # Private targets
