@@ -1,41 +1,41 @@
-# syntax=docker/dockerfile:1@sha256:ecfaec9ed6d810b56388c508f4121597bfbba70d41a6dfeee4d8cad5f295fc32
+# syntax=docker/dockerfile:1@sha256:4edf897a3ffa55b89f906fc8cc78afdb3f1834cc9c7083565e611a8a7d5fe99e
 
 ARG TARGETARCH
 
 FROM scratch AS node-amd64
 
-ADD --checksum=sha256:855d581f8a4eb1a8117e3426de25fe02770592febcfb31369aee1ffbfee9e8ec \
-    https://nodejs.org/dist/v24.20.0/node-v24.20.0-linux-x64.tar.gz \
+ADD --checksum=sha256:28ea0a438de9a13bd7891fd758eee6c7819ee8af5442dfd8d45bd65e56d4228c \
+    https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.gz \
     /tmp/node.tgz
 
 FROM scratch AS node-arm64
 
-ADD --checksum=sha256:3515603e2487879a39bc75716f1a2affd027500c64ba50e845cf72cb33219013 \
-    https://nodejs.org/dist/v24.20.0/node-v24.20.0-linux-arm64.tar.gz \
+ADD --checksum=sha256:b7e7991d5407815adfa74a2a9cd4db683552c8ce32ff4a295c22e972849c3f5d \
+    https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-arm64.tar.gz \
     /tmp/node.tgz
 
 FROM node-${TARGETARCH} AS node
 
 FROM scratch AS go-amd64
 
-ADD --checksum=sha256:63d339f0da5ab53635a56f2490a7984dfe12dfcff22ad749f63edaf590168445 \
-    https://dl.google.com/go/go1.27.1.linux-amd64.tar.gz \
+ADD --checksum=sha256:ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5 \
+    https://dl.google.com/go/go1.27.2.linux-amd64.tar.gz \
     /tmp/go.tgz
 
 FROM scratch AS go-arm64
 
-ADD --checksum=sha256:3450b45a3f9ee8568792736a5c5e70a1f2e9b36c35a8f74958c03e51d7d92bec \
-    https://dl.google.com/go/go1.27.1.linux-arm64.tar.gz \
+ADD --checksum=sha256:94f3e30b8e374bc285e7dadc11e0865726b9bc6e85b841ccceaabc0214c6b7c8 \
+    https://dl.google.com/go/go1.27.2.linux-arm64.tar.gz \
     /tmp/go.tgz
 
 FROM go-${TARGETARCH} AS go
 
-FROM docker.io/library/ubuntu:26.04@sha256:513c074113a871b51a8d16ab445c88779d6452d937a164fb5cc479f32668a41d
+FROM docker.io/library/ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944
 
 COPY --from=node /tmp/node.tgz /tmp/node.tgz
 COPY --from=go /tmp/go.tgz /tmp/go.tgz
 
-ENV GOLANG_VERSION=1.27.1
+ENV GOLANG_VERSION=1.27.2
 ENV GOTOOLCHAIN=local
 ENV GOPATH=/go
 ENV NPM_CONFIG_PREFIX=/home/ubuntu/.local
@@ -44,7 +44,6 @@ ENV PATH=/home/ubuntu/.local/bin:/go/bin:/usr/local/go/bin:${PATH}
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes --no-install-recommends \
     && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates gcc git libc6-dev make openssh-client sudo \
-    && if [ "$(dpkg --print-architecture)" = arm64 ]; then DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends binutils-gold; fi \
     && tar --extract --gzip --file /tmp/go.tgz --directory /usr/local --no-same-owner \
     && tar --extract --gzip --file /tmp/node.tgz --directory /usr/local --strip-components=1 --no-same-owner --exclude='*/README.md' --exclude='*/CHANGELOG.md' --exclude='*/LICENSE' \
     && ln --symbolic /usr/local/bin/node /usr/local/bin/nodejs \

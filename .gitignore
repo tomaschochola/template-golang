@@ -6,8 +6,14 @@
 .zed
 .antigravitycli
 
+# devcontainer
+/.devcontainer/.tmp
+
 # node
 /node_modules
+
+# go
+/vendor
 
 # environment files and secrets
 /.env
