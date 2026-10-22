@@ -18,14 +18,14 @@ FROM node-${TARGETARCH} AS node
 
 FROM scratch AS go-amd64
 
-ADD --checksum=sha256:ecbadb99091a3f46e31f5f934b068b1864eafa7995211b39eaddf76996045fe5 \
-    https://dl.google.com/go/go1.27.2.linux-amd64.tar.gz \
+ADD --checksum=sha256:65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40 \
+    https://dl.google.com/go/go1.27.3.linux-amd64.tar.gz \
     /tmp/go.tgz
 
 FROM scratch AS go-arm64
 
-ADD --checksum=sha256:94f3e30b8e374bc285e7dadc11e0865726b9bc6e85b841ccceaabc0214c6b7c8 \
-    https://dl.google.com/go/go1.27.2.linux-arm64.tar.gz \
+ADD --checksum=sha256:a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587165f49 \
+    https://dl.google.com/go/go1.27.3.linux-arm64.tar.gz \
     /tmp/go.tgz
 
 FROM go-${TARGETARCH} AS go
@@ -35,7 +35,7 @@ FROM docker.io/library/ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a31
 COPY --from=node /tmp/node.tgz /tmp/node.tgz
 COPY --from=go /tmp/go.tgz /tmp/go.tgz
 
-ENV GOLANG_VERSION=1.27.2
+ENV GOLANG_VERSION=1.27.3
 ENV GOTOOLCHAIN=local
 ENV GOPATH=/go
 ENV NPM_CONFIG_PREFIX=/home/ubuntu/.local
