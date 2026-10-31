@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/tomaschochola/template-golang/v2/internal/app"
+	"github.com/tomaschochola/template-golang/internal/app"
 )
 
 func TestTodoReturnsZero(t *testing.T) {
@@ -18,7 +18,6 @@ func TestTodoReturnsZero(t *testing.T) {
 func FuzzTodo(f *testing.F) {
 	f.Add(0)
 
-	// Todo has no input yet; replace the placeholder with application input.
 	f.Fuzz(func(t *testing.T, _ int) {
 		if got := app.Todo(); got != 0 {
 			t.Fatalf("Todo() = %d, want 0", got)

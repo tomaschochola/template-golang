@@ -2,20 +2,6 @@
 
 ARG TARGETARCH
 
-FROM scratch AS node-amd64
-
-ADD --checksum=sha256:28ea0a438de9a13bd7891fd758eee6c7819ee8af5442dfd8d45bd65e56d4228c \
-    https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-x64.tar.gz \
-    /tmp/node.tgz
-
-FROM scratch AS node-arm64
-
-ADD --checksum=sha256:b7e7991d5407815adfa74a2a9cd4db683552c8ce32ff4a295c22e972849c3f5d \
-    https://nodejs.org/dist/v24.22.0/node-v24.22.0-linux-arm64.tar.gz \
-    /tmp/node.tgz
-
-FROM node-${TARGETARCH} AS node
-
 FROM scratch AS go-amd64
 
 ADD --checksum=sha256:65efbc80fdc1fa2cd2631cad5b481777a68e8725f34e89f50fc6ac714e379b40 \
@@ -30,26 +16,35 @@ ADD --checksum=sha256:a06e99309dbcbdca1a8ccd2282c3ee146e55930886e26b4f1193269587
 
 FROM go-${TARGETARCH} AS go
 
-FROM docker.io/library/ubuntu:26.04@sha256:c098726dd9b9733f3e885f8de0ef375206a311b0a317eadc40d347b1115fb944
+FROM scratch AS node-amd64
 
-COPY --from=node /tmp/node.tgz /tmp/node.tgz
+ADD --checksum=sha256:5848553868b402d3fabb5b09270649977780a390f832155721025a08b5104455 \
+    https://nodejs.org/dist/v26.13.0/node-v26.13.0-linux-x64.tar.gz \
+    /tmp/node.tgz
+
+FROM scratch AS node-arm64
+
+ADD --checksum=sha256:439e9c438acdf6a6ffe47418da709153d66c4bed812e30a473faacb107dd2791 \
+    https://nodejs.org/dist/v26.13.0/node-v26.13.0-linux-arm64.tar.gz \
+    /tmp/node.tgz
+
+FROM node-${TARGETARCH} AS node
+
+FROM docker.io/library/ubuntu:26.04@sha256:19fcd1bf268f02b60aca3bd30bd8a6d9a11759a430e32921833e65f16d87348a
+
 COPY --from=go /tmp/go.tgz /tmp/go.tgz
+COPY --from=node /tmp/node.tgz /tmp/node.tgz
 
-ENV GOLANG_VERSION=1.27.3
-ENV GOTOOLCHAIN=local
 ENV GOPATH=/go
-ENV NPM_CONFIG_PREFIX=/home/ubuntu/.local
-ENV PATH=/home/ubuntu/.local/bin:/go/bin:/usr/local/go/bin:${PATH}
+ENV GOTOOLCHAIN=local
 
 RUN apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get upgrade --yes --no-install-recommends \
-    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates gcc git libc6-dev make openssh-client sudo \
-    && tar --extract --gzip --file /tmp/go.tgz --directory /usr/local --no-same-owner \
+    && DEBIAN_FRONTEND=noninteractive apt-get install --yes --no-install-recommends ca-certificates fd-find gcc git libarchive-tools libatomic1 libc6-dev make openssh-client sudo \
     && tar --extract --gzip --file /tmp/node.tgz --directory /usr/local --strip-components=1 --no-same-owner --exclude='*/README.md' --exclude='*/CHANGELOG.md' --exclude='*/LICENSE' \
+    && ln --symbolic /usr/bin/fdfind /usr/local/bin/fd \
     && ln --symbolic /usr/local/bin/node /usr/local/bin/nodejs \
-    && rm --force -- /tmp/go.tgz /tmp/node.tgz \
-    && mkdir --parents -- "$GOPATH/src" "$GOPATH/bin" \
-    && chmod -R 1777 "$GOPATH" \
+    && rm --force -- /tmp/node.tgz \
     && usermod --shell /bin/bash ubuntu \
     && install --directory --owner ubuntu --group ubuntu \
         /home/ubuntu/.local \
@@ -59,5 +54,16 @@ RUN apt-get update \
     && printf '%s\n' 'ubuntu ALL=(root) NOPASSWD:ALL' > /etc/sudoers.d/ubuntu \
     && chmod 0440 /etc/sudoers.d/ubuntu \
     && rm -rf /var/lib/apt/lists/*
+
+RUN npm install --global --prefix=/usr/local --ignore-scripts npm@12.2.1 \
+    && rm -rf /root/.npm
+
+RUN tar --extract --gzip --file /tmp/go.tgz --directory /usr/local --no-same-owner \
+    && rm --force -- /tmp/go.tgz \
+    && mkdir --parents -- "$GOPATH/src" "$GOPATH/bin" \
+    && chmod -R 1777 "$GOPATH"
+
+ENV NPM_CONFIG_PREFIX=/home/ubuntu/.local
+ENV PATH=/home/ubuntu/.local/bin:/go/bin:/usr/local/go/bin:${PATH}
 
 USER ubuntu

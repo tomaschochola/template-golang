@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/tomaschochola/template-golang/v2/internal/app"
+	"github.com/tomaschochola/template-golang/internal/app"
 )
 
 func main() {
