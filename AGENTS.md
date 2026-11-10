@@ -4,6 +4,56 @@ Edit AGENTS.md and README.md only when explicitly requested.
 
 Freely manage PLAN.md, NOTES.md, and ARCHITECTURE.md for your own work. Keep them gitignored and never commit them.
 
+## Language
+
+- Go 1.27
+- Go standard library 1.27
+
+## Platform
+
+- Operating system: GNU/Linux, Linux kernel 7.0
+- Architecture: x86-64
+- ISA: x86-64-v1, x86-64-v2, x86-64-v3
+- Endianness: little-endian
+
+- Operating system: GNU/Linux, Linux kernel 7.0
+- Architecture: AArch64
+- ISA: ARMv8.0-A, ARMv9.0-A
+- Endianness: little-endian
+
+- Operating system: macOS 26.0
+- Architecture: x86-64
+- ISA: x86-64-v1, x86-64-v2, x86-64-v3
+- Endianness: little-endian
+
+- Operating system: macOS 26.0
+- Architecture: AArch64
+- ISA: ARMv8.0-A, ARMv9.0-A
+- Endianness: little-endian
+
+- Operating system: Windows 11
+- Architecture: x86-64
+- ISA: x86-64-v1, x86-64-v2, x86-64-v3
+- Endianness: little-endian
+
+- Operating system: Windows 11
+- Architecture: AArch64
+- ISA: ARMv8.0-A, ARMv9.0-A
+- Endianness: little-endian
+
+## Toolchain
+
+- Go 1.27
+- GNU Make 4.4
+- go test 1.27
+- Go race detector 1.27
+- Go coverage 1.27
+- gofmt 1.27
+- go vet 1.27
+- golang.org/x/tools/cmd/goimports 0.52
+- golang.org/x/tools/go/analysis/passes/shadow/cmd/shadow 0.52
+- golang.org/x/vuln/cmd/govulncheck 1.9
+
 ## Devcontainer
 
 The development environment is configured in `.devcontainer/`. Manage it from the repository root on the host using the Makefile targets or directly through the `devcontainer`, `docker` and `docker compose` CLIs.
@@ -50,7 +100,8 @@ end_of_line = lf
 indent_size = 4
 indent_style = space
 insert_final_newline = true
-max_line_length = 200
+max_line_length = off
+quote_type = single
 trim_trailing_whitespace = true
 
 [*.go]
@@ -58,44 +109,41 @@ indent_size = tab
 indent_style = tab
 tab_width = 8
 
-[*.ini]
-max_line_length = off
-
-[*.md]
-indent_size = unset
-indent_style = unset
-max_line_length = off
-
-[*.txt]
-indent_size = unset
-indent_style = unset
-max_line_length = off
-
-[LICENSE]
-indent_size = unset
-indent_style = unset
-max_line_length = off
-
 [Makefile]
+indent_size = tab
 indent_style = tab
-max_line_length = off
+tab_width = 8
 ```
 
 ## Prettier
 
-```json
-{
-    "arrowParens": "always",
-    "bracketSameLine": false,
-    "objectWrap": "preserve",
-    "plugins": ["@prettier/plugin-xml"],
-    "proseWrap": "never",
-    "semi": true,
-    "singleAttributePerLine": true,
-    "singleQuote": true,
-    "trailingComma": "all",
-    "xmlQuoteAttributes": "double",
-    "xmlSelfClosingSpace": true,
-    "xmlWhitespaceSensitivity": "preserve"
-}
+```js
+import xml from '@prettier/plugin-xml';
+
+export default Object.freeze({
+    arrowParens: 'always',
+    bracketSameLine: false,
+    bracketSpacing: true,
+    checkIgnorePragma: false,
+    embeddedLanguageFormatting: 'auto',
+    experimentalOperatorPosition: 'end',
+    experimentalTernaries: false,
+    htmlWhitespaceSensitivity: 'strict',
+    insertPragma: false,
+    jsxSingleQuote: false,
+    objectWrap: 'preserve',
+    plugins: Object.freeze([xml]),
+    proseWrap: 'never',
+    quoteProps: 'consistent',
+    requirePragma: false,
+    semi: true,
+    singleAttributePerLine: true,
+    singleQuote: true,
+    trailingComma: 'all',
+    vueIndentScriptAndStyle: true,
+    xmlQuoteAttributes: 'double',
+    xmlSelfClosingSpace: true,
+    xmlSortAttributesByKey: false,
+    xmlWhitespaceSensitivity: 'strict',
+});
 ```
